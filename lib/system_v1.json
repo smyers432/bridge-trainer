@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "name": "Standard 2/1 (Sutton-style) v1",
+    "version": "1.0.0",
+    "public_access": true,
+    "scoring_default": "matchpoints"
+  },
+  "practice_scope": {
+    "uncontested_only": true,
+    "prefer_seat_for_major_system": ["1st", "2nd"]
+  },
+  "opening_structure": {
+    "five_card_majors": true,
+    "minor_style": "better_minor",
+    "notrump_openings": {
+      "1NT": { "min_hcp": 15, "max_hcp": 17 },
+      "2NT": { "min_hcp": 20, "max_hcp": 21 }
+    },
+    "strong_two_clubs": {
+      "enabled": true,
+      "min_total_points": 22,
+      "responder_waiting_bid": "2D"
+    },
+    "weak_two_bids": {
+      "enabled": true,
+      "allowed_openings": ["2D", "2H", "2S"],
+      "style": "classic",
+      "twoNT_inquiry_enabled": false
+    }
+  },
+  "hand_evaluation": {
+    "use_distribution_points": true,
+    "distribution_points": {
+      "support_4plus_trump": { "void": 5, "singleton": 3, "doubleton": 1 },
+      "support_exactly_3_trump": { "void": 3, "singleton": 2, "doubleton": 1 }
+    }
+  },
+  "grading": {
+    "tiers": ["BEST", "ACCEPTABLE", "SYSTEM_VIOLATION"],
+    "explain_when_not_best": true,
+    "ranking_basis": "matchpoints"
+  },
+  "conventions": {
+    "two_over_one": {
+      "enabled": true,
+      "applies_after": ["1H", "1S"],
+      "two_level_new_suit_is_game_forcing": true,
+      "one_level_new_suit_is_forcing": true,
+      "not_after_minor_opening": true
+    },
+    "one_nt_forcing": {
+      "enabled": true,
+      "applies_after": ["1H", "1S"],
+      "forcing_rounds": 1,
+      "points_range": { "min": 6, "max": 12 },
+      "jump_to_3M_is_limit_raise": {
+        "points_min": 10,
+        "points_max": 12,
+        "support_cards": 3
+      }
+    },
+    "bergen_raises": {
+      "enabled": true,
+      "three_level_is_invitational": true
+    },
+    "jacoby_2nt": {
+      "enabled": true,
+      "game_forcing": true,
+      "use_exact_summary_structure": true
+    },
+    "splinters": {
+      "enabled": true,
+      "game_forcing": true,
+      "requires_4plus_support": true
+    },
+    "fourth_suit_forcing": {
+      "enabled": true,
+      "forcing": "game",
+      "not_after_2over1": true,
+      "not_after_reverse": true,
+      "not_after_2C_opening": true
+    },
+    "new_minor_forcing": {
+      "enabled": true,
+      "forcing": "one_round",
+      "responder_min_points": 11
+    },
+    "nt_system": {
+      "enabled": true,
+      "stayman": true,
+      "jacoby_transfers": true,
+      "texas_transfers": true,
+      "puppet_stayman_over_1NT_only": true,
+      "super_accepts": false
+    }
+  }
+}
+

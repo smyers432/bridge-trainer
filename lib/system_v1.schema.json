@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bridge Trainer System V1 Schema",
+  "type": "object",
+  "required": [
+    "meta",
+    "practice_scope",
+    "opening_structure",
+    "hand_evaluation",
+    "grading",
+    "conventions"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "public_access",
+        "scoring_default"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "public_access": { "type": "boolean" },
+        "scoring_default": {
+          "type": "string",
+          "enum": ["matchpoints", "imps"]
+        }
+      }
+    },
+    "practice_scope": {
+      "type": "object",
+      "required": ["uncontested_only"],
+      "properties": {
+        "uncontested_only": { "type": "boolean" },
+        "prefer_seat_for_major_system": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "opening_structure": {
+      "type": "object",
+      "required": [
+        "five_card_majors",
+        "minor_style",
+        "notrump_openings"
+      ],
+      "properties": {
+        "five_card_majors": { "type": "boolean" },
+        "minor_style": { "type": "string" },
+        "notrump_openings": {
+          "type": "object",
+          "properties": {
+            "1NT": {
+              "type": "object",
+              "required": ["min_hcp", "max_hcp"],
+              "properties": {
+                "min_hcp": { "type": "number" },
+                "max_hcp": { "type": "number" }
+              }
+            },
+            "2NT": {
+              "type": "object",
+              "required": ["min_hcp", "max_hcp"],
+              "properties": {
+                "min_hcp": { "type": "number" },
+                "max_hcp": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hand_evaluation": {
+      "type": "object",
+      "required": ["use_distribution_points"],
+      "properties": {
+        "use_distribution_points": { "type": "boolean" }
+      }
+    },
+    "grading": {
+      "type": "object",
+      "required": ["tiers"],
+      "properties": {
+        "tiers": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "conventions": {
+      "type": "object"
+    }
+  }
+}

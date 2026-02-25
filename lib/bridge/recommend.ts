@@ -1,0 +1,356 @@
+import { Hand, Opening, Recommendation, Suit } from "@/lib/bridge/types";
+import { countShortages, distributionPointsForSupport, handHcp, suitLength } from "@/lib/bridge/eval";
+
+function openingToTrumpSuit(opening: Opening): Suit | null {
+  if (opening === "1H") return "hearts";
+  if (opening === "1S") return "spades";
+  return null;
+}
+
+function suitSymbol(suit: Suit): string {
+  switch (suit) {
+    case "spades":
+      return "♠";
+    case "hearts":
+      return "♥";
+    case "diamonds":
+      return "♦";
+    case "clubs":
+      return "♣";
+  }
+}
+
+/**
+ * Implements your “A + B” priority for responder with GF values:
+ * B) If 1♠ is available over 1♥ and responder has 4+ spades, bid 1♠ first (still forcing).
+ * A) Otherwise, with GF values (13+ HCP proxy for now) and a suitable 4+ suit at the 2-level,
+ *    make a 2/1 response (2♣/2♦ over a major) which is game-forcing.
+ *
+ * Note: This is still “V1 MVP”: we’re not doing full continuation trees yet.
+ */
+
+function pickSplinterBid(hand: Hand, trumpSuit: Suit): string | null {
+  // Choose the shortest side suit (void/singleton). Never splinter in trump.
+  const sideSuits: Suit[] = (["spades", "hearts", "diamonds", "clubs"] as Suit[]).filter(
+    (s) => s !== trumpSuit
+  );
+
+  let bestSuit: Suit | null = null;
+  let bestLen = 99;
+
+  for (const s of sideSuits) {
+    const len = suitLength(hand, s);
+    if (len < bestLen) {
+      bestLen = len;
+      bestSuit = s;
+    }
+  }
+
+  // splinter requires singleton or void
+  if (!bestSuit || bestLen > 1) return null;
+
+  switch (bestSuit) {
+    case "clubs":
+      return "4C";
+    case "diamonds":
+      return "4D";
+    case "hearts":
+      return "4H";
+    case "spades":
+      return "4S";
+  }
+}
+function recommendOverOneMajor(hand: Hand, opening: "1H" | "1S"): Recommendation {
+  const hcp = handHcp(hand);
+  const trumpSuit = openingToTrumpSuit(opening)!;
+  const trumpCount = suitLength(hand, trumpSuit);
+  const distPts = distributionPointsForSupport(hand, trumpSuit, trumpCount);
+  const supportPts = hcp + distPts;
+
+  const shortages = countShortages(hand, trumpSuit);
+  const hasShortness = shortages.voids + shortages.singletons > 0;
+
+  const sym = suitSymbol(trumpSuit);
+
+  // 1) Major-suit fit actions first (Bergen/Jacoby/Splinter MVP)
+  if (trumpCount >= 4) {
+    if (hcp >= 13 && !hasShortness) {
+      return {
+        best: "2NT",
+        acceptable: ["3D"],
+        explanationIfNotBest:
+          `With 4+${sym} support and game-forcing strength, 2NT (Jacoby) is best to show a GF raise and let opener describe. ` +
+          `A direct 3♦ (Bergen limit raise) is less descriptive, so it’s only acceptable.`
+      };
+    }
+
+   const splinterBid = pickSplinterBid(hand, trumpSuit);
+
+if (hcp >= 13 && splinterBid) {
+  return {
+    best: splinterBid,
+    acceptable: ["2NT"],
+    explanationIfNotBest:
+      `With 4+${sym} support, game-forcing strength, and shortness, a splinter (double-jump) is best to show your shortage immediately. ` +
+      `2NT (Jacoby) is acceptable but may hide the shortage initially.`
+  };
+}
+
+    if (supportPts >= 10 && supportPts <= 12) {
+      return {
+        best: "3D",
+        acceptable: [opening === "1H" ? "2H" : "2S"],
+        explanationIfNotBest:
+          `With 4+${sym} support and invitational values (10–12 support points), 3♦ is best as a Bergen limit raise. ` +
+          `A simple raise is acceptable but under-descriptive.`
+      };
+    }
+
+    if (supportPts >= 7 && supportPts <= 9) {
+      return {
+        best: "3C",
+        acceptable: [opening === "1H" ? "2H" : "2S"],
+        explanationIfNotBest:
+          `With 4+${sym} support and a constructive hand (7–9 support points), 3♣ is best (Bergen constructive raise). ` +
+          `A simple raise is acceptable but less descriptive.`
+      };
+    }
+
+    if (supportPts <= 6) {
+      return {
+        best: opening === "1H" ? "3H" : "3S",
+        acceptable: [opening === "1H" ? "2H" : "2S"],
+        explanationIfNotBest:
+          `With 4+${sym} support and a weak hand, the best is a preemptive raise to 3${sym}. ` +
+          `A simple raise is acceptable but less effective preemptively.`
+      };
+    }
+
+    return {
+      best: opening === "1H" ? "2H" : "2S",
+      acceptable: ["3C"],
+      explanationIfNotBest:
+        `With ${trumpCount}${sym} support but no clear Bergen/Jacoby/splinter fit, a simple raise is the practical default.`
+    };
+  }
+
+  // 2) If no 4+ fit, implement A+B for GF responder actions
+
+  const spades = suitLength(hand, "spades");
+  const hearts = suitLength(hand, "hearts");
+  const diamonds = suitLength(hand, "diamonds");
+  const clubs = suitLength(hand, "clubs");
+
+  const gf = hcp >= 13;
+
+  // B: show 1♠ over 1♥ with 4+ spades (forcing at 1-level)
+  if (opening === "1H" && gf && spades >= 4) {
+    return {
+      best: "1S",
+      acceptable: ["2C", "2D", "1NT"],
+      explanationIfNotBest:
+        "With GF values and 4+ spades, show 1♠ first over 1♥. One-level new suits are forcing and help find the best strain. " +
+        "A 2/1 response is also forcing to game, but showing spades first is usually best if available."
+    };
+  }
+
+  // A: 2/1 responses (GF) when available
+  if (gf) {
+    // Over 1♥ or 1♠: 2♣ / 2♦ are the usual 2/1 choices (we’ll refine suit quality later)
+    if (diamonds >= 4) {
+      return {
+        best: "2D",
+        acceptable: ["2C", "1NT"],
+        explanationIfNotBest:
+          "With GF values and a 4+ diamond suit, 2♦ is best as a 2/1 game force. 2♣ can be acceptable depending on shape. " +
+          "1NT is generally not best with a clear 2/1 available."
+      };
+    }
+    if (clubs >= 4) {
+      return {
+        best: "2C",
+        acceptable: ["2D", "1NT"],
+        explanationIfNotBest:
+          "With GF values and a 4+ club suit, 2♣ is best as a 2/1 game force. 2♦ can be acceptable depending on shape. " +
+          "1NT is generally not best with a clear 2/1 available."
+      };
+    }
+  }
+
+  // 3) 1NT forcing (MVP) and weaker fallbacks
+  if (trumpCount === 3 && hcp >= 10 && hcp <= 12) {
+    return {
+      best: "1NT",
+      acceptable: [opening === "1H" ? "2H" : "2S"],
+      explanationIfNotBest:
+        `With 3-card ${sym} support and 10–12 points, 1NT (forcing) is best in your system, planning to show the 3-card limit raise later.`
+    };
+  }
+
+  if (hcp >= 6) {
+    return {
+      best: "1NT",
+      acceptable: ["Pass"],
+      explanationIfNotBest:
+        "With no major fit and some values, 1NT is the practical response (and forcing for one round in your system)."
+    };
+  }
+
+  return {
+    best: "Pass",
+    acceptable: ["1NT"],
+    explanationIfNotBest: "With very weak values and no fit, pass is best."
+  };
+}
+
+/**
+ * Minor-opening responder logic: still simple placeholder (we will tighten next).
+ */
+function recommendOverMinor(hand: Hand): Recommendation {
+  const hcp = handHcp(hand);
+  const spades = suitLength(hand, "spades");
+  const hearts = suitLength(hand, "hearts");
+
+  if (hearts >= 4) {
+    return {
+      best: "1H",
+      acceptable: ["1S", "1NT"],
+      explanationIfNotBest:
+        "Over a minor opening, showing a 4+ major at the 1-level is best. 1NT is acceptable with no convenient major, but here you can show hearts."
+    };
+  }
+  if (spades >= 4) {
+    return {
+      best: "1S",
+      acceptable: ["1NT"],
+      explanationIfNotBest:
+        "Over a minor opening, showing a 4+ major at the 1-level is best. 1NT is acceptable when you lack a major, but here you can show spades."
+    };
+  }
+  if (hcp >= 6) {
+    return {
+      best: "1NT",
+      acceptable: ["2C", "2D"],
+      explanationIfNotBest:
+        "With no 4-card major to show over a minor opening, 1NT is the practical default with moderate values. We’ll refine minor auctions next."
+    };
+  }
+  return {
+    best: "Pass",
+    acceptable: ["1NT"],
+    explanationIfNotBest: "With very weak values and no major to show, pass is best."
+  };
+}
+function isBalanced4333(hand: Hand): boolean {
+  const lens = [
+    suitLength(hand, "spades"),
+    suitLength(hand, "hearts"),
+    suitLength(hand, "diamonds"),
+    suitLength(hand, "clubs")
+  ].sort((a, b) => b - a);
+
+  return lens[0] === 4 && lens[1] === 3 && lens[2] === 3 && lens[3] === 3;
+}
+
+function recommendOver1NT(hand: Hand): Recommendation {
+  const hcp = handHcp(hand);
+  const sp = suitLength(hand, "spades");
+  const he = suitLength(hand, "hearts");
+
+  // Texas transfers: place game quickly with 6+ major and game values
+  if (he >= 6 && hcp >= 10) {
+    return {
+      best: "4D",
+      acceptable: ["2D"],
+      explanationIfNotBest:
+        "With 6+ hearts and game values, Texas (4♦) is best to place the contract quickly. A Jacoby transfer (2♦) is acceptable but less direct."
+    };
+  }
+  if (sp >= 6 && hcp >= 10) {
+    return {
+      best: "4H",
+      acceptable: ["2H"],
+      explanationIfNotBest:
+        "With 6+ spades and game values, Texas (4♥) is best to place the contract quickly. A Jacoby transfer (2♥) is acceptable but less direct."
+    };
+  }
+
+  // Jacoby transfers with 5+ major
+  if (he >= 5) {
+    return {
+      best: "2D",
+      acceptable: ["4D"],
+      explanationIfNotBest:
+        "With a 5+ heart suit, start with a Jacoby transfer (2♦) so opener declares. Texas is mainly for hands that want to place game immediately."
+    };
+  }
+  if (sp >= 5) {
+    return {
+      best: "2H",
+      acceptable: ["4H"],
+      explanationIfNotBest:
+        "With a 5+ spade suit, start with a Jacoby transfer (2♥) so opener declares. Texas is mainly for hands that want to place game immediately."
+    };
+  }
+
+  // Puppet Stayman (GF) - simplified trigger
+  const has3Major = sp === 3 || he === 3;
+  const shortages = countShortages(hand);
+  const hasShortness = shortages.voids + shortages.singletons > 0;
+
+  if (hcp >= 10 && has3Major && !isBalanced4333(hand) && hasShortness) {
+    return {
+      best: "3C",
+      acceptable: ["3NT"],
+      explanationIfNotBest:
+        "With game-forcing strength and a 3-card major plus shortness, Puppet Stayman (3♣) is best to look for a 5-3 major fit while keeping opener as declarer."
+    };
+  }
+
+  // Standard Stayman with invitational+ values and a 4-card major
+  if (hcp >= 8 && (sp >= 4 || he >= 4)) {
+    return {
+      best: "2C",
+      acceptable: ["3NT"],
+      explanationIfNotBest:
+        "With invitational+ strength and a 4-card major, Stayman (2♣) is best to look for a 4-4 major fit. Jumping to 3NT can be acceptable but may miss a major fit."
+    };
+  }
+
+  // Notrump invitations / signoffs
+  if (hcp >= 10) {
+    return {
+      best: "3NT",
+      acceptable: ["2NT"],
+      explanationIfNotBest:
+        "With game values opposite 15–17 and no major-suit plan, 3NT is best."
+    };
+  }
+
+  if (hcp >= 8) {
+    return {
+      best: "2NT",
+      acceptable: ["Pass"],
+      explanationIfNotBest:
+        "With invitational values opposite 15–17, 2NT is best."
+    };
+  }
+
+  return {
+    best: "Pass",
+    acceptable: ["2NT"],
+    explanationIfNotBest:
+      "With weak values opposite 15–17 and no long major to transfer into, passing is best."
+  };
+}
+export function recommendResponder(hand: Hand, opening: Opening): Recommendation {
+  if (opening === "1NT") {
+    return recommendOver1NT(hand);
+  }
+
+  if (opening === "1H" || opening === "1S") {
+    return recommendOverOneMajor(hand, opening);
+  }
+
+  return recommendOverMinor(hand);
+}
