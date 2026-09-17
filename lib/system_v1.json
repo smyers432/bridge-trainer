@@ -1,9 +1,10 @@
 {
   "meta": {
     "name": "Standard 2/1 (Sutton-style) v1",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "public_access": true,
-    "scoring_default": "matchpoints"
+    "scoring_default": "matchpoints",
+    "rulebook": "Bidding System Rulebook v1"
   },
   "practice_scope": {
     "uncontested_only": true,
@@ -29,11 +30,29 @@
     }
   },
   "hand_evaluation": {
+    "raise_strength_metric": "support_points",
+    "new_suit_metric": "hcp",
     "use_distribution_points": true,
     "distribution_points": {
       "support_4plus_trump": { "void": 5, "singleton": 3, "doubleton": 1 },
       "support_exactly_3_trump": { "void": 3, "singleton": 2, "doubleton": 1 }
     }
+  },
+  "canonical_raise_structure": {
+    "four_plus_trump_support_points": {
+      "preempt_3M": "<=6",
+      "bergen_3C": "7-9",
+      "bergen_3D": "10-11",
+      "jacoby_2NT": "12+ (no side shortness)",
+      "splinter": "12+ (side singleton/void; beats Jacoby)",
+      "weak_freak_4M": "5+ trumps, weak, distributional"
+    },
+    "three_card_support_points": {
+      "onent_forcing_then_2M": "5-7",
+      "single_raise_2M": "8-9",
+      "onent_forcing_then_3M": "10-12"
+    },
+    "two_over_one_gf": "13+ HCP, <=3 support"
   },
   "grading": {
     "tiers": ["BEST", "ACCEPTABLE", "SYSTEM_VIOLATION"],
@@ -43,10 +62,10 @@
   "conventions": {
     "two_over_one": {
       "enabled": true,
-      "applies_after": ["1H", "1S"],
+      "applies_after": ["1D", "1H", "1S"],
+      "not_after_1C": true,
       "two_level_new_suit_is_game_forcing": true,
-      "one_level_new_suit_is_forcing": true,
-      "not_after_minor_opening": true
+      "one_level_new_suit_is_forcing": true
     },
     "one_nt_forcing": {
       "enabled": true,
@@ -54,45 +73,25 @@
       "forcing_rounds": 1,
       "points_range": { "min": 6, "max": 12 },
       "jump_to_3M_is_limit_raise": {
-        "points_min": 10,
-        "points_max": 12,
+        "support_points_min": 10,
+        "support_points_max": 12,
         "support_cards": 3
       }
     },
-    "bergen_raises": {
-      "enabled": true,
-      "three_level_is_invitational": true
-    },
-    "jacoby_2nt": {
-      "enabled": true,
-      "game_forcing": true,
-      "use_exact_summary_structure": true
-    },
-    "splinters": {
-      "enabled": true,
-      "game_forcing": true,
-      "requires_4plus_support": true
-    },
-    "fourth_suit_forcing": {
-      "enabled": true,
-      "forcing": "game",
-      "not_after_2over1": true,
-      "not_after_reverse": true,
-      "not_after_2C_opening": true
-    },
-    "new_minor_forcing": {
-      "enabled": true,
-      "forcing": "one_round",
-      "responder_min_points": 11
-    },
+    "bergen_raises": { "enabled": true, "three_level_is_invitational": true },
+    "jacoby_2nt": { "enabled": true, "game_forcing": true, "floor_support_points": 12 },
+    "splinters": { "enabled": true, "game_forcing": true, "requires_4plus_support": true, "floor_support_points": 12 },
+    "fourth_suit_forcing": { "enabled": false, "note": "documented; out of V1 scope" },
+    "new_minor_forcing": { "enabled": false, "note": "documented; out of V1 scope" },
+    "inverted_minors": { "enabled": false, "note": "documented; out of V1 scope" },
     "nt_system": {
       "enabled": true,
       "stayman": true,
       "jacoby_transfers": true,
       "texas_transfers": true,
       "puppet_stayman_over_1NT_only": true,
+      "puppet_beats_stayman_when_both_apply": true,
       "super_accepts": false
     }
   }
 }
-

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import system from "@/lib/system_v1.json";
 
 export default function Home() {
@@ -20,6 +21,15 @@ export default function Home() {
       <p>
         Default scoring:
         <strong> {system.meta.scoring_default}</strong>
+      </p>
+
+      <p style={{ marginTop: 24 }}>
+        <Link
+          href="/practice/v3"
+          style={{ fontWeight: 700, color: "#14493A", textDecoration: "underline" }}
+        >
+          Go to the Auction Trainer &rarr;
+        </Link>
       </p>
     </main>
   );
