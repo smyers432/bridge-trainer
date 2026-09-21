@@ -309,7 +309,13 @@ function helpSuitGameTry(opener: Hand, opening: Opening): Recommendation {
   if (losers >= 7) {
     return { best: "Pass", acceptable: [], explanationIfNotBest: `Help Suit Game Try: ${losers} losers opposite a raise — too many losers for game; pass.` };
   }
-  const sides = SUITS.filter((s) => s !== trump);
+  // Only a suit ranking BELOW trump can be asked about: over a 1H opening,
+  // spades outranks hearts, so asking in 3S and then "declining" back to 3 of
+  // the major (3H) would be an illegal downward call. (Bug: this used to
+  // include spades as a candidate over 1H and produced illegal auctions like
+  // 1H-2H-3S-3H whenever spades happened to be the weakest side suit — the
+  // same defect as Reverse Drury's ask-suit selection, fixed the same way.)
+  const sides = SUITS.filter((s) => s !== trump && bidRank("3" + DEN[s]) < bidRank("3" + M));
   const candidates = sides
     .map((s) => ({ s, losers: suitLosers(opener, s) }))
     .filter((c) => suitLength(opener, c.s) >= 3 && c.losers >= 2)
@@ -359,6 +365,17 @@ export function responderContinuation(pair: Pair2, openerRebidBid: string): Reco
   const M = DEN[trump];
 
   if (firstCall === "2NT") {
+    // Opener may already have placed the contract (most commonly a minimum
+    // jumping straight to game). Repeating that same game bid as responder's
+    // "next call" isn't a legal or sensible follow-up — pass once opener has
+    // already reached (or passed) the spot responder would otherwise sign off
+    // in. (Bug: this used to hard-code "4M" unconditionally, which produced
+    // impossible auctions like 1S-2NT-4S-4S in roughly 30% of Jacoby hands —
+    // any time opener held a minimum with no shortness.)
+    if (bidRank(openerRebidBid) >= bidRank("4" + M)) {
+      return { best: "Pass", acceptable: [],
+        explanationIfNotBest: "Opener already placed the contract in game; pass." };
+    }
     return { best: "4" + M, acceptable: [],
       explanationIfNotBest: "With game-only values, sign off in game in the agreed major (slam is out of scope here)." };
   }
@@ -399,19 +416,32 @@ export function responderContinuation(pair: Pair2, openerRebidBid: string): Reco
       explanationIfNotBest: "A balanced minimum with no fit passes opener's minimum rebid." };
   }
 
-  // 2/1 GF: place the game. A major fit exists whenever opener raises responder's own
-  // suit, OR whenever responder holds 3+ cards in opener's ORIGINALLY-BID major — that
-  // fit was already established the moment opener opened 1M (which promises 5+ cards
-  // there), regardless of what opener's rebid shows afterward. A new suit or a balanced
-  // 2NT rebid adds information; it never denies the major suit opener opened in the
-  // first place. (Previously this only recognized the fit when opener's REBID repeated
-  // the major, missing the far more common case of a 5-3 fit sitting behind a natural
-  // new-suit or 2NT rebid — flagged and fixed at the user's request.)
+  // 2/1 GF: place the game. A fit exists whenever opener raises responder's own
+  // suit — major OR MINOR — since that's an explicit 4+ card holding opener just
+  // showed. Absent that, a major fit still exists whenever responder holds 3+
+  // cards in opener's ORIGINALLY-BID major — that fit was already established
+  // the moment opener opened 1M (which promises 5+ cards there), regardless of
+  // what opener's rebid shows afterward. A new suit or a balanced 2NT rebid adds
+  // information; it never denies the major suit opener opened in the first
+  // place. (Previously this only recognized a raise of responder's suit when
+  // that suit was hearts, missing the equally common case of opener raising a
+  // 2/1 response in clubs or diamonds — e.g. 1S-2D-3D — and instead defaulting
+  // to 3NT or opener's major even though a minor fit was just agreed. Flagged
+  // and fixed at the user's request.)
   const rebidSuit = suitOfCall(openerRebidBid);
   const respSuit = suitOfCall(firstCall)!;
-  const raisedOurMajor = rebidSuit === respSuit && respSuit === "hearts";
+  const openerRaisedRespSuit = rebidSuit === respSuit;
   const ownMajorFit = suitLength(responder, trump) >= 3;
-  if (raisedOurMajor) return { best: "4H", acceptable: [], explanationIfNotBest: "A major fit is agreed; bid game in the major." };
+  if (openerRaisedRespSuit) {
+    const isMinor = respSuit === "diamonds" || respSuit === "clubs";
+    const level = isMinor ? "5" : "4";
+    return {
+      best: level + DEN[respSuit], acceptable: [],
+      explanationIfNotBest: isMinor
+        ? `Opener raised your ${respSuit} to show 4+ card support — that's the agreed fit; bid game there (a minor-suit game needs the 5 level).`
+        : "A major fit is agreed; bid game in the major.",
+    };
+  }
   if (ownMajorFit) {
     return {
       best: "4" + M, acceptable: ["3NT"],
