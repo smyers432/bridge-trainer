@@ -143,7 +143,16 @@ function openerPuppetPlace(opener: Hand, cont: string): Recommendation | null {
   if (cont === "4D") return sp >= 4
     ? { best: "4S", acceptable: ["4H"], explanationIfNotBest: "Pick a 4-4 fit; spades." }
     : { best: "4H", acceptable: [], explanationIfNotBest: "Pick the 4-4 heart fit." };
-  return null; // 4H/4S/3NT/Pass already final
+  if (cont === "Pass") return null; // opener's own 3NT was already passed out — nothing left to call
+  // Responder placed the contract directly in game (4H/4S/3NT, having found or
+  // failed to find a fit) rather than inviting. This used to end the auction
+  // right here with no opener call at all — meaning opener was never actually
+  // tested on it, even holding a maximum. There's no slam machinery in this
+  // trainer yet (cue-bids / Roman Keycard Blackwood are future work), so the
+  // correct call is always Pass — but that restraint is exactly what's worth
+  // drilling: recognizing a strong hand isn't a license to bid on when the
+  // tools to explore slam safely aren't there.
+  return { best: "Pass", acceptable: [], explanationIfNotBest: "Responder already placed the contract in game. This trainer doesn't have slam-bidding tools yet, so pass here even with extra strength — don't invent a speculative raise." };
 }
 
 /* ---------- Transfer branch ---------- */
@@ -182,7 +191,13 @@ function openerAfterTransferInvite(opener: Hand, firstCall: string, cont: string
   if (cont === "3NT") return support
     ? { best: "4" + den, acceptable: [], explanationIfNotBest: "With 3-card support, correct 3NT to the major-suit game." }
     : { best: "Pass", acceptable: [], explanationIfNotBest: "No fit; pass 3NT." };
-  return null; // Pass / 4M already final
+  if (cont === "Pass") return null; // responder passed the completed transfer outright — nothing left to call
+  // cont is "4" + den: responder placed game directly (6+ card trump, game
+  // values, no need to invite). Same reasoning as the Puppet branch above —
+  // no slam machinery exists yet, so Pass is always correct here regardless of
+  // extra strength opposite, and that's worth testing on its own rather than
+  // silently ending the auction with no decision for opener at all.
+  return { best: "Pass", acceptable: [], explanationIfNotBest: "Responder already placed the contract in game. This trainer doesn't have slam-bidding tools yet, so pass here even with extra strength — don't invent a speculative raise." };
 }
 
 /* ---------- No-major (2NT / 3NT) branch ---------- */
