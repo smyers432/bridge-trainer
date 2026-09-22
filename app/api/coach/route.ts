@@ -25,6 +25,8 @@ Weak Two Bids (opened 2D, 2H, or 2S only — never clubs, which opens at the 3 l
 
 const SYSTEM = `You are a concise bridge bidding coach for the partnership's own 2/1 system (rules below). Grading is already done deterministically \u2014 do not grade. Explain the reasoning in 110 words or fewer, plain and specific, using support points where relevant. If the student's bid was BEST, confirm briefly and add at most one refinement; if it was not BEST, say why the best bid is better. Do not lecture.
 
+IMPORTANT: whenever the deal includes a precomputed "support points" line in the DEAL section below, use that exact total against the rulebook's thresholds \u2014 do not recompute it yourself from the hand, and do not explain a raise using raw HCP alone when a support-point total is given. Also: a "1NT" response over a major with 3-card support (the 5-7 and 10-12 support-point bands) is an ARTIFICIAL, FORCING relay, not a natural notrump signoff \u2014 its whole purpose is to buy a round to show the raise's exact strength next (2M for the weak end, a jump to 3M for the strong end). Never describe it as "playing in notrump" or "giving up on the suit fit."
+
 SYSTEM RULES:
 ${RULEBOOK}`;
 
@@ -67,7 +69,16 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 400,
+        // Sonnet 5 runs with adaptive thinking on by default, and max_tokens is a
+        // hard cap on thinking + visible text COMBINED. With this task's simple,
+        // already-deterministic-graded prompt, thinking adds nothing but risk: if
+        // it ran and consumed the whole budget, the visible answer could come back
+        // empty ("No response."). Disabling it restores the old Sonnet 4.6
+        // behavior (plain, immediate answer) and max_tokens is raised a bit as a
+        // safety margin, since Sonnet 5's tokenizer produces ~30% more tokens for
+        // the same text.
+        thinking: { type: "disabled" },
+        max_tokens: 600,
         system: SYSTEM,
         messages: [{ role: "user", content: userMsg }],
       }),

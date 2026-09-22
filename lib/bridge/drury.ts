@@ -105,7 +105,16 @@ function classifyOpenerRebid(opener: Hand, opening: "1H" | "1S"): { kind: RebidK
   if (hcp >= 15 && hcp <= 17 && isBalanced(opener)) return { kind: "bal_15_17" };
   if (hcp <= 11) return { kind: "light" };
 
-  const askCandidates: Suit[] = opening === "1H" ? ["spades", "clubs"] : ["hearts", "clubs"];
+  // Over 1H, spades is excluded even though the doc lists it as a candidate:
+  // spades outranks hearts, so an ask in 3S followed by a "decline" back to "3
+  // of the major" would require bidding 3H *after* 3S — an illegal downward
+  // call. Only a suit that ranks below the agreed trump can be a help-suit ask
+  // (which is also why diamonds is off the table over 1S: it's claimed by the
+  // relay, not because of rank). Clubs is always safe since it ranks lowest.
+  // (Bug: this used to include spades over 1H and produced illegal auctions
+  // like 1H-2C-3S-3H in about 2% of Reverse Drury hands. Flagged and fixed at
+  // the user's request.)
+  const askCandidates: Suit[] = opening === "1H" ? ["clubs"] : ["hearts", "clubs"];
   const qualifying = askCandidates
     .map((s) => ({ s, losers: suitLosers(opener, s) }))
     .filter((c) => suitLength(opener, c.s) >= 3 && c.losers >= 2)

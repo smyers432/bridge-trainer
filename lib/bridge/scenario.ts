@@ -17,8 +17,10 @@ export type Scenario = {
   responder: Hand;
   opening: Opening;                 // 1NT for No Trump; 1H/1S for 2/1
   calls: SeatCall[];                // full best-line auction (variable length)
-  userIndices: number[];            // up to the first two calls the user makes
-  scoredIndex: number;              // the last user call (stamped + counted)
+  userIndices: number[];            // every call the user makes in this auction
+  scoredIndex: number;              // the LAST user call (stamped + counted) —
+                                     // everything earlier the user makes must match
+                                     // the system's call to proceed, but isn't graded
   userHand: Hand;
   partnerHand: Hand;
 };
@@ -34,7 +36,19 @@ export type { NTBranch };
 export type AnyFocus = Focus | NTBranch;
 
 function finish(convention: Convention, role: Role, opener: Hand, responder: Hand, opening: Opening, calls: SeatCall[]): Scenario {
-  const mine = calls.map((c, i) => (c.by === role ? i : -1)).filter((i) => i >= 0).slice(0, 2);
+  // Every index belonging to this seat is interactive. Most branches only ever
+  // give a seat two calls (e.g. opener's opening + rebid in the 2/1 family), but
+  // several NT/Drury/Splinter lines give opener a THIRD decision further down the
+  // auction — e.g. 1NT-2H-2S-3NT-?, where opener must choose Pass or 4S after
+  // responder's game-forcing transfer continuation. Capping this at the first two
+  // role-matching indices (the old behavior) silently auto-picked that later
+  // decision with the engine's own recommendation instead of asking the user, and
+  // then graded nothing — the bug where a real decision (correct to game or not)
+  // never became a testable choice. Keeping every one of the seat's indices here
+  // means fillEngine() (which auto-fills only the OTHER seat's calls) stops short
+  // at each of them, and onUserBid grades only the last one (scoredIndex) while
+  // gating the earlier ones to the system's own call, exactly as before.
+  const mine = calls.map((c, i) => (c.by === role ? i : -1)).filter((i) => i >= 0);
   const scoredIndex = mine[mine.length - 1];
   return {
     convention, role, opener, responder, opening, calls,

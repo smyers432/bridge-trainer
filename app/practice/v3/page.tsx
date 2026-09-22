@@ -170,13 +170,23 @@ export default function V3PracticePage() {
     setCoach({ open: true, loading: true, text: "", err: "" });
     const scoredRec = scen.calls[scen.scoredIndex].rec;
     try {
+      // When there's an established (or candidate) trump suit and the student holds
+      // 3+ cards there, hand the coach the exact precomputed support-point math
+      // (same numbers shown on screen) rather than making it recompute HCP +
+      // distribution from the hand string on its own — this is what lets it explain
+      // things like "a singleton pushed 9 HCP to 11 support points" correctly and
+      // confidently instead of guessing.
+      const sb = twoOverOneTrump ? supportBreakdown(scen.userHand, twoOverOneTrump) : null;
+      const supportLine = sb
+        ? ` Precomputed support points for raising ${twoOverOneTrump}: ${sb.hcp} HCP + ${sb.dist} distribution = ${sb.total} support points — use this total (not raw HCP) against the support-point thresholds in the rulebook.`
+        : "";
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
           opening: scen.opening, hand: scen.userHand, hcp: handHcp(scen.userHand),
           userBid: scored?.bid ?? null, tier: scored?.tier ?? null, best: scoredRec.best,
           auction: placed.join(" - "),
-          note: `Convention: ${convention === "no_trump" ? "No Trump (1NT opening)" : convention === "weak_two" ? "Weak Two (2D/2H/2S opening)" : "Two Over One"}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.`,
+          note: `Convention: ${convention === "no_trump" ? "No Trump (1NT opening)" : convention === "weak_two" ? "Weak Two (2D/2H/2S opening)" : "Two Over One"}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.${supportLine}`,
         }),
       });
       const data = await res.json();
