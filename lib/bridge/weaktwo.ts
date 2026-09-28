@@ -1,4 +1,5 @@
 import { Hand, Rank, Recommendation, Suit } from "./types";
+import { assertValidPair } from "./dealValidate";
 import { handHcp, suitLength } from "./eval";
 import { bidRank } from "./grade";
 
@@ -51,7 +52,10 @@ function dealTwoHands(): { a: Hand; b: Hand } {
     for (const s of SUITS) (h[s] as string[]).sort((x, y) => order[y] - order[x]);
     return h as Hand;
   };
-  return { a: take(deck.slice(0, 13)), b: take(deck.slice(13, 26)) };
+  const a = take(deck.slice(0, 13));
+  const b = take(deck.slice(13, 26));
+  assertValidPair(a, b, "weaktwo");
+  return { a, b };
 }
 
 /** 2 of the top 3 (A/K/Q), or 3 of the top 5 (A/K/Q/J/10) with at least one ace or king. */

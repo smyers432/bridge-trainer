@@ -1,4 +1,5 @@
 import { Hand, Recommendation, Suit } from "./types";
+import { assertValidPair } from "./dealValidate";
 import { distributionPointsForSupport, handHcp, suitLength } from "./eval";
 import { pickSplinter } from "./recommend";
 import { bidRank } from "./grade";
@@ -45,7 +46,10 @@ function dealTwoHands(): { a: Hand; b: Hand } {
     for (const s of SUITS) (h[s] as string[]).sort((x, y) => order[y] - order[x]);
     return h as Hand;
   };
-  return { a: take(deck.slice(0, 13)), b: take(deck.slice(13, 26)) };
+  const a = take(deck.slice(0, 13));
+  const b = take(deck.slice(13, 26));
+  assertValidPair(a, b, "splinter");
+  return { a, b };
 }
 
 /** A normal 5+ card major opening, 12-19 HCP (same rule as the main Two Over One family). */

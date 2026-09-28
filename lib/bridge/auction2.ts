@@ -1,5 +1,6 @@
 import { Hand, Opening, Rank, Recommendation, Suit } from "./types";
-import { countShortages, distributionPointsForSupport, handHcp, handLosers, suitLength, suitLosers, supportPoints } from "./eval";
+import { assertValidPair } from "./dealValidate";
+import { countShortages, distributionPointsForSupport, handHcp, handLosers, lengthPoints, suitLength, suitLosers, supportPoints } from "./eval";
 import { recommendResponder } from "./recommend";
 import { bidRank } from "./grade";
 
@@ -66,13 +67,30 @@ function dealTwoHands(): { a: Hand; b: Hand } {
     for (const s of SUITS) h[s].sort((x, y) => order[y] - order[x]);
     return h;
   };
-  return { a: take(deck.slice(0, 13)), b: take(deck.slice(13, 26)) };
+  const a = take(deck.slice(0, 13));
+  const b = take(deck.slice(13, 26));
+  assertValidPair(a, b, "auction2");
+  return { a, b };
 }
 
 /** Does this hand open 1H or 1S in our system (5+ major, 12-19, not a 1NT/2C hand)? */
 function opensMajor(h: Hand): Opening | null {
   const hcp = handHcp(h);
-  if (hcp < 12 || hcp > 19) return null;
+  // The upper bound stays on raw HCP: this app doesn't model a strong 2C
+  // opening, so "too strong for one of a suit" is judged the way real
+  // bidding judges it — playing strength toward game/slam — not by piling
+  // length points on top (a legitimate 18-HCP hand with a 6-card suit still
+  // opens 1 of a suit; it isn't "too strong" just because 18+2=20).
+  if (hcp > 19) return null;
+  // The LOWER bound is where classic point-count theory actually calls for
+  // length points: the opening decision is a pre-fit evaluation of your own
+  // hand, so a thin-HCP hand with a long suit can still be worth opening
+  // (e.g. 11 HCP + a 6-card suit = 13 total, opens). Length points don't
+  // apply to notrump hands or once a fit is agreed (see lengthPoints' doc
+  // comment in eval.ts) — this is the one place in the opening decision
+  // where they do.
+  const points = hcp + lengthPoints(h);
+  if (points < 12) return null;
   const sp = suitLength(h, "spades"), he = suitLength(h, "hearts");
   if (sp >= 5 && sp >= he) return "1S";
   if (he >= 5 && he > sp) return "1H";
@@ -111,7 +129,7 @@ function acceptable(opener: Hand, responder: Hand, opening: Opening, call: strin
     if (tc === 3) return true;
     return isBalanced(responder) && handHcp(responder) <= 9;
   }
-  return true; // Bergen is inherently <= 11
+  return true; // Bergen is inherently <= 12 (13+ support points goes to Jacoby 2NT / splinters instead)
 }
 
 /* ---------- "Mixed" variety: weighted anti-clump ----------

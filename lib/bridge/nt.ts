@@ -1,4 +1,5 @@
 import { Hand, Recommendation, Suit } from "./types";
+import { assertValidPair } from "./dealValidate";
 import { countShortages, handHcp, suitLength } from "./eval";
 
 /* =============================================================================
@@ -283,7 +284,10 @@ function dealTwoHands(): { a: Hand; b: Hand } {
     for (const s of SUITS) (h[s] as string[]).sort((x, y) => order[y] - order[x]);
     return h as Hand;
   };
-  return { a: take(deck.slice(0, 13)), b: take(deck.slice(13, 26)) };
+  const a = take(deck.slice(0, 13));
+  const b = take(deck.slice(13, 26));
+  assertValidPair(a, b, "nt");
+  return { a, b };
 }
 
 /* ---------- "Mixed" variety: weighted anti-clump (same fix as auction2.ts's

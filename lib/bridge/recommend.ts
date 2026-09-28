@@ -3,6 +3,7 @@ import {
   countShortages,
   distributionPointsForSupport,
   handHcp,
+  lengthPoints,
   suitLength,
 } from "./eval";
 
@@ -40,20 +41,41 @@ function overOneMajor(hand: Hand, op: "1H" | "1S"): Recommendation {
   const sh = countShortages(hand, trump);
   const hasShort = sh.voids + sh.singletons > 0;
   const supp = hcp + distributionPointsForSupport(hand, trump, tc);
+  // Classic point-count theory: length points belong in NATURAL, pre-fit
+  // decisions (do I have enough to show my own suit?), never mixed into the
+  // support-point raise ladder above (that's HCP + shortness once a fit is
+  // confirmed — mixing the two double-counts the same distribution). Used
+  // below, not in `supp`.
+  const naturalPoints = hcp + lengthPoints(hand);
   const raise = op === "1H" ? "3H" : "3S";
   const simple = op === "1H" ? "2H" : "2S";
 
-  // (A) Four-plus-card support ladder (support points)
+  // (A0) Weak freak: 5+ trumps, weak, with distribution (Law of Total
+  // Trumps). Checked before everything else, including the support-point
+  // ladder below — a genuinely preemptive hand wants to jump straight to
+  // game to disrupt the opponents, regardless of support-point count or a
+  // coexisting 4-card spade suit.
+  if (tc >= 5 && supp < 10 && (hasShort || sh.doubletons >= 2)) {
+    return {
+      best: op === "1H" ? "4H" : "4S",
+      acceptable: [raise],
+      explanationIfNotBest:
+        "Weak freak: 5+ trumps, weak, with distribution (Law of Total Trumps).",
+    };
+  }
+
+  // (A) Four-plus-card support ladder (support points) — always wins once
+  // responder holds 4+ card support for opener's own major, even when a
+  // second 4-card major is also present. Per the user's confirmed
+  // preference, raise directly rather than detouring through 1S first.
   if (tc >= 4) {
-    if (tc >= 5 && supp < 10 && (hasShort || sh.doubletons >= 2)) {
-      return {
-        best: op === "1H" ? "4H" : "4S",
-        acceptable: [raise],
-        explanationIfNotBest:
-          "Weak freak: 5+ trumps, weak, with distribution (Law of Total Trumps).",
-      };
-    }
-    if (supp >= 12) {
+    // Game-forcing threshold: 13+ support points (opening-bid strength or
+    // better) is the standard cutoff for Jacoby 2NT / splinters \u2014 not 12.
+    // Below that, a 4-card raise with 10-12 support points is a Bergen LIMIT
+    // raise (3D), inviting rather than forcing game. (Bug, flagged by the
+    // user: this used to fire Jacoby 2NT / splinters at 12 support points,
+    // one point short of the convention.)
+    if (supp >= 13) {
       if (hasShort) {
         const spl = pickSplinter(hand, op);
         if (spl) {
@@ -61,7 +83,7 @@ function overOneMajor(hand: Hand, op: "1H" | "1S"): Recommendation {
             best: spl,
             acceptable: ["2NT"],
             explanationIfNotBest:
-              "Splinter: 4+ support, 12+ support points, side singleton/void \u2014 show the shortness now.",
+              "Splinter: 4+ support, 13+ support points, side singleton/void \u2014 show the shortness now.",
           };
         }
         return { best: "2NT", acceptable: [raise], explanationIfNotBest: "Jacoby 2NT (game-forcing raise)." };
@@ -69,11 +91,11 @@ function overOneMajor(hand: Hand, op: "1H" | "1S"): Recommendation {
       return {
         best: "2NT",
         acceptable: ["3D"],
-        explanationIfNotBest: "Jacoby 2NT: 12+ support points, 4+ trumps, no side shortness.",
+        explanationIfNotBest: "Jacoby 2NT: 13+ support points, 4+ trumps, no side shortness.",
       };
     }
     if (supp >= 10) {
-      return { best: "3D", acceptable: [simple], explanationIfNotBest: "Bergen limit raise: 10\u201311 support points, 4-card support." };
+      return { best: "3D", acceptable: [simple], explanationIfNotBest: "Bergen limit raise: 10\u201312 support points, 4-card support." };
     }
     if (supp >= 7) {
       return { best: "3C", acceptable: [simple], explanationIfNotBest: "Bergen constructive raise: 7\u20139 support points, 4-card support." };
@@ -81,19 +103,22 @@ function overOneMajor(hand: Hand, op: "1H" | "1S"): Recommendation {
     return { best: raise, acceptable: [simple], explanationIfNotBest: "Preemptive raise: \u22646 support points, 4-card support." };
   }
 
-  // (C-1) Over 1H with 4+ spades: show 1S first
+  // (C-1) Over 1H with 4+ spades, no heart support: show 1S. Only reachable
+  // when tc < 4 -- the ladder above already returns for every tc >= 4 case,
+  // per the user's confirmed preference to always raise directly with
+  // support rather than detour through a second 4-card major first.
   if (op === "1H" && sp >= 4) {
-    if (hcp >= 13) {
-      return { best: "1S", acceptable: ["2C", "2D", "1NT"], explanationIfNotBest: "Show 4+ spades at the one level first \u2014 a one-level new suit is forcing." };
+    if (naturalPoints >= 13) {
+      return { best: "1S", acceptable: ["2C", "2D", "1NT"], explanationIfNotBest: "Show 4+ spades at the one level first -- a one-level new suit is forcing." };
     }
-    if (hcp >= 6) {
+    if (naturalPoints >= 6) {
       return { best: "1S", acceptable: ["1NT"], explanationIfNotBest: "Show 4+ spades at the one level (forcing); preferred to 1NT." };
     }
     return { best: "Pass", acceptable: ["1S"], explanationIfNotBest: "Too weak to respond." };
   }
 
   // (C-2) Game force, no 4-card support: 2/1 in the longest biddable 2-level suit
-  if (hcp >= 13) {
+  if (naturalPoints >= 13) {
     // Over 1S a heart suit (5+) is a live 2/1 at 2H; minors need 4+. Over 1H only the minors.
     const opts: Array<[string, number, string]> =
       op === "1S"
@@ -108,7 +133,7 @@ function overOneMajor(hand: Hand, op: "1H" | "1S"): Recommendation {
         best: viable[0][2],
         acceptable: [...alts, "1NT"],
         explanationIfNotBest:
-          "2/1 game force: 13+ HCP, no 4-card support \u2014 bid your longest suit at the two level.",
+          "2/1 game force: 13+ points (HCP + length), no 4-card support \u2014 bid your longest suit at the two level.",
       };
     }
     return {

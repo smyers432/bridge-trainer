@@ -29,6 +29,27 @@ export function suitLength(hand: Hand, suit: Suit): number {
   return hand[suit].length;
 }
 
+/**
+ * Classic "long suit" length points: 1 point for every card beyond the 4th,
+ * in EVERY suit (summed, not just the longest) — a 5-card suit is +1, a
+ * 6-card suit +2, a 7-card suit +3, etc.
+ *
+ * Per classic point-count theory this is a PRE-FIT evaluation tool only:
+ *  - Use it for your own hand's general suit-contract strength before any
+ *    trump fit is known — e.g. deciding whether to open, or evaluating a
+ *    natural (non-raise) response or rebid.
+ *  - Never use it for notrump hands (1NT/2NT and their responses run on HCP
+ *    alone — there's no trump suit to ruff long cards through).
+ *  - Never use it once a trump fit is agreed — at that point you switch to
+ *    support points (shortness in your OTHER suits, see
+ *    distributionPointsForSupport below) instead. Counting both length and
+ *    support points on the same hand double-counts the same distributional
+ *    strength.
+ */
+export function lengthPoints(hand: Hand): number {
+  return SUITS.reduce((sum, s) => sum + Math.max(0, hand[s].length - 4), 0);
+}
+
 export function countShortages(
   hand: Hand,
   excludeSuit?: Suit
