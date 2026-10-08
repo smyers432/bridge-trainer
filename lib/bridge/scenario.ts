@@ -85,7 +85,7 @@ export function dealScenario(convention: Convention, role: Role, focus: AnyFocus
   }
 
   const p = dealTwoOverOnePair(focus as Focus);
-  const oRebid = openerRebid(p.opener, p.opening, p.firstCall);
+  const oRebid = openerRebid(p.opener, p.responder, p.opening, p.firstCall);
   const calls: SeatCall[] = [
     { by: "opener", rec: { best: p.opening, acceptable: [], explanationIfNotBest: "A 5+ card major, 12-19 HCP, opens 1 of the major." } },
     { by: "responder", rec: recommendResponder(p.responder, p.opening) },

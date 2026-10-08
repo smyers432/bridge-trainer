@@ -3,6 +3,7 @@ import { assertValidPair } from "./dealValidate";
 import { countShortages, distributionPointsForSupport, handHcp, handLosers, lengthPoints, suitLength, suitLosers, supportPoints } from "./eval";
 import { recommendResponder } from "./recommend";
 import { bidRank } from "./grade";
+import { cheapestCueBid, combinedControls, combinedStrength, hasFirstRoundControl, inSlamZone, judgeSlam, longOrStrongSecondSuit } from "./slam";
 
 /* =============================================================================
    V3 "Two Over One" family: 2/1 game force + Bergen + Jacoby 2NT, unified, with
@@ -109,16 +110,22 @@ export function familyCall(responder: Hand, opening: Opening): string | null {
   return null; // splinters, 1S-first, weak freaks, etc. are not in this family
 }
 
-/** Soundness/slam caps so dealt hands keep bounded (game-only) second rounds honest. */
+/**
+ * Soundness caps so dealt hands keep bounded, sensible second rounds honest.
+ * Jacoby 2NT and 2/1 GF used to be capped here to game-only strength (no
+ * slam tries) -- that cap is gone now that responder's continuation in both
+ * families can place a small slam (see judgeSlam in slam.ts); keeping it
+ * would simply stop slam-caliber hands from ever being dealt for practice.
+ * Bergen and 1NT-forcing keep their existing caps: Bergen is a raise made
+ * with only 7-12 support points, and 1NT-forcing sequences aren't
+ * game-forcing at all, so slam exploration doesn't apply to either.
+ */
 function acceptable(opener: Hand, responder: Hand, opening: Opening, call: string): boolean {
   const trump = majorOf(opening);
   const cat = familyCategory(call, opening);
   if (cat === "simple_raise") return true; // already tightly bounded (3-card support, 8-9 support pts) by recommendResponder
-  if (cat === "jacoby") {
-    const sp = handHcp(responder) + distributionPointsForSupport(responder, trump, suitLength(responder, trump));
-    return sp <= 14; // game-only, no slam try
-  }
-  if (cat === "two_one") return handHcp(responder) <= 16; // GF, not slammish
+  if (cat === "jacoby") return true; // game-forcing from the start; slam is now in scope (see slam.ts)
+  if (cat === "two_one") return true; // game-forcing from the start; slam is now in scope (see slam.ts)
   if (cat === "one_nt") {
     // Keep opener out of the 18-19 jump zone so the bounded continuation stays game-only,
     // and admit only 1NT shapes with a clean second round:
@@ -233,21 +240,51 @@ export function jacoby2ntRebid(opener: Hand, opening: Opening): Recommendation {
     explanationIfNotBest: "Jacoby 2NT: a minimum with no shortness jumps to 4 of the major (fast arrival, no slam interest)." };
 }
 
-/** 1M-3C / 1M-3D (Bergen): accept game or decline to 3M. Thresholds are a flagged resolution. */
-export function bergenRebid(opener: Hand, opening: Opening, firstCall: string): Recommendation {
+/** Cheapest legal bid of `suit` above `previousBid` (3-level, or 4-level if 3 isn't high enough). */
+function nextLegalBid(suit: Suit, previousBid: string): string {
+  const threeLevel = "3" + DEN[suit];
+  if (bidRank(threeLevel) > bidRank(previousBid)) return threeLevel;
+  return "4" + DEN[suit];
+}
+
+/**
+ * 1M-3C / 1M-3D (Bergen): accept game, decline to 3M, or -- when strong
+ * enough to accept AND combined strength reaches the slam zone (see
+ * slam.ts) -- explore first with a cue bid or a long/strong second suit
+ * instead of jumping straight to game. Accept/decline thresholds are a
+ * flagged resolution.
+ */
+export function bergenRebid(opener: Hand, responder: Hand, opening: Opening, firstCall: string): Recommendation {
   const trump = majorOf(opening);
   const M = DEN[trump];
   const sp = handHcp(opener) + distributionPointsForSupport(opener, trump, suitLength(opener, trump));
   const threeM = "3" + M, fourM = "4" + M;
-  if (firstCall === "3C") { // responder 7-9
-    return sp >= 17
-      ? { best: fourM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2663 (7-9), a strong opener accepts game." }
-      : { best: threeM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2663 (7-9), a minimum signs off in 3 of the major." };
+  const accepts = firstCall === "3C" ? sp >= 17 : sp >= 14; // responder shown 7-9 (3C) or 10-12 (3D)
+  if (!accepts) {
+    return firstCall === "3C"
+      ? { best: threeM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2663 (7-9), a minimum signs off in 3 of the major." }
+      : { best: threeM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2666 (10-12), a dead minimum declines to 3 of the major." };
   }
-  // 3D: responder 10-11
-  return sp >= 14
-    ? { best: fourM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2666 (10-11, limit), a sound opener bids game." }
-    : { best: threeM, acceptable: [], explanationIfNotBest: "Over Bergen 3\u2666 (10-11), a dead minimum declines to 3 of the major." };
+  if (inSlamZone(opener, responder, trump)) {
+    const cueSuit = cheapestCueBid(opener, trump);
+    const exploreSuit = cueSuit ?? longOrStrongSecondSuit(opener, trump);
+    if (exploreSuit) {
+      const bid = nextLegalBid(exploreSuit, firstCall);
+      return {
+        best: bid,
+        acceptable: [fourM],
+        explanationIfNotBest: cueSuit
+          ? `Strong enough (${sp} support points) to explore for slam before committing \u2014 show first-round control of ${exploreSuit} rather than jumping to game.`
+          : `Strong enough (${sp} support points) to explore for slam before committing \u2014 show your long/strong ${exploreSuit} suit rather than jumping to game.`,
+      };
+    }
+  }
+  return {
+    best: fourM, acceptable: [],
+    explanationIfNotBest: firstCall === "3C"
+      ? "Over Bergen 3\u2663 (7-9), a strong opener accepts game."
+      : "Over Bergen 3\u2666 (10-12), a sound opener bids game.",
+  };
 }
 
 /** 1M-2x (2/1 GF): natural rebid. support-raise -> new suit -> rebid major -> 2NT. */
@@ -365,9 +402,9 @@ export function hasHelp(hand: Hand, suit: Suit, atMax: boolean): boolean {
   return false;
 }
 
-export function openerRebid(opener: Hand, opening: Opening, firstCall: string): Recommendation {
+export function openerRebid(opener: Hand, responder: Hand, opening: Opening, firstCall: string): Recommendation {
   if (firstCall === "2NT") return jacoby2ntRebid(opener, opening);
-  if (firstCall === "3C" || firstCall === "3D") return bergenRebid(opener, opening, firstCall);
+  if (firstCall === "3C" || firstCall === "3D") return bergenRebid(opener, responder, opening, firstCall);
   if (firstCall === "1NT") return onetntRebid(opener, opening);
   if ((firstCall === "2H" && opening === "1H") || (firstCall === "2S" && opening === "1S")) {
     return helpSuitGameTry(opener, opening);
@@ -375,7 +412,7 @@ export function openerRebid(opener: Hand, opening: Opening, firstCall: string): 
   return twoOverOneRebid(opener, opening, firstCall);
 }
 
-/* ---------- Responder's bounded continuation (responder seat, no slam) ---------- */
+/* ---------- Responder's bounded continuation (responder seat) ---------- */
 
 export function responderContinuation(pair: Pair2, openerRebidBid: string): Recommendation {
   const { opener, responder, opening, firstCall } = pair;
@@ -394,10 +431,25 @@ export function responderContinuation(pair: Pair2, openerRebidBid: string): Reco
       return { best: "Pass", acceptable: [],
         explanationIfNotBest: "Opener already placed the contract in game; pass." };
     }
+    if (judgeSlam(opener, responder, trump) === "small_slam") {
+      return { best: "6" + M, acceptable: ["4" + M],
+        explanationIfNotBest: `Combined strength (${combinedStrength(opener, responder, trump)} support points) and first-round control of ${combinedControls(opener, responder)} suits support a small slam.` };
+    }
     return { best: "4" + M, acceptable: [],
-      explanationIfNotBest: "With game-only values, sign off in game in the agreed major (slam is out of scope here)." };
+      explanationIfNotBest: "Game-going values, but not enough combined strength or control for slam -- settle in game." };
   }
   if (firstCall === "3C" || firstCall === "3D") {
+    if (openerRebidBid !== "3" + M && openerRebidBid !== "4" + M) {
+      // Opener explored instead of settling immediately (a cue bid or a
+      // long/strong second suit) -- place the final contract now that both
+      // hands' combined strength and controls are known.
+      if (judgeSlam(opener, responder, trump) === "small_slam") {
+        return { best: "6" + M, acceptable: ["4" + M],
+          explanationIfNotBest: `Combined strength (${combinedStrength(opener, responder, trump)} support points) and first-round control of ${combinedControls(opener, responder)} suits support a small slam.` };
+      }
+      return { best: "4" + M, acceptable: [],
+        explanationIfNotBest: "Opener explored, but combined strength/control falls short of slam -- settle in game." };
+    }
     return { best: "Pass", acceptable: [],
       explanationIfNotBest: "You have shown your range with the Bergen raise; respect opener's decision and pass." };
   }
@@ -453,6 +505,12 @@ export function responderContinuation(pair: Pair2, openerRebidBid: string): Reco
   if (openerRaisedRespSuit) {
     const isMinor = respSuit === "diamonds" || respSuit === "clubs";
     const level = isMinor ? "5" : "4";
+    if (judgeSlam(opener, responder, respSuit) === "small_slam") {
+      return {
+        best: "6" + DEN[respSuit], acceptable: [level + DEN[respSuit]],
+        explanationIfNotBest: `Combined strength (${combinedStrength(opener, responder, respSuit)} support points) and first-round control of ${combinedControls(opener, responder)} suits support a small slam in ${respSuit}.`,
+      };
+    }
     return {
       best: level + DEN[respSuit], acceptable: [],
       explanationIfNotBest: isMinor
@@ -461,6 +519,12 @@ export function responderContinuation(pair: Pair2, openerRebidBid: string): Reco
     };
   }
   if (ownMajorFit) {
+    if (judgeSlam(opener, responder, trump) === "small_slam") {
+      return {
+        best: "6" + M, acceptable: ["4" + M],
+        explanationIfNotBest: `Combined strength (${combinedStrength(opener, responder, trump)} support points) and first-round control of ${combinedControls(opener, responder)} suits support a small slam.`,
+      };
+    }
     return {
       best: "4" + M, acceptable: ["3NT"],
       explanationIfNotBest: `Opener's 1${M} promised 5+ cards there, and you hold 3+ — that 8-card-or-better fit was established from the opening bid; prefer it to notrump.`,

@@ -185,6 +185,7 @@ export default function V3PracticePage() {
         body: JSON.stringify({
           opening: scen.opening, hand: scen.userHand, hcp: handHcp(scen.userHand),
           userBid: scored?.bid ?? null, tier: scored?.tier ?? null, best: scoredRec.best,
+          explanation: scoredRec.explanationIfNotBest,
           auction: placed.join(" - "),
           note: `Convention: ${convention === "no_trump" ? "No Trump (1NT opening)" : convention === "weak_two" ? "Weak Two (2D/2H/2S opening)" : "Two Over One"}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.${supportLine}`,
         }),
