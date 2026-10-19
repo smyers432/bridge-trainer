@@ -5,10 +5,21 @@ import { dealNTPair, buildNTAuction, NT_FOCUS, type NTBranch } from "./nt";
 import { dealDruryPair, buildDruryAuction } from "./drury";
 import { dealSplinterPair, buildSplinterAuction } from "./splinter";
 import { dealWeakTwoPair, buildWeakTwoAuction, WEAK_TWO_FOCUS } from "./weaktwo";
+import {
+  interferenceSeatCall,
+  pickInterference,
+  recommendResponderOverInterference,
+  shouldDealInterference,
+  type InterventionMode,
+} from "./interference";
 
 export type Convention = "two_over_one" | "no_trump" | "weak_two";
 export type Role = "opener" | "responder";
-export type SeatCall = { by: Role; rec: Recommendation };
+// "lho"/"rho" are scripted opponent calls (V6 competitive bidding) -- never a
+// Role, never something the user is graded on, never matched by userIndices.
+export type Seat = Role | "lho" | "rho";
+export type SeatCall = { by: Seat; rec: Recommendation };
+export type { InterventionMode };
 
 export type Scenario = {
   convention: Convention;
@@ -58,7 +69,12 @@ function finish(convention: Convention, role: Role, opener: Hand, responder: Han
   };
 }
 
-export function dealScenario(convention: Convention, role: Role, focus: AnyFocus = "mixed"): Scenario {
+export function dealScenario(
+  convention: Convention,
+  role: Role,
+  focus: AnyFocus = "mixed",
+  intervention: InterventionMode = "none"
+): Scenario {
   if (convention === "no_trump") {
     const p = dealNTPair(focus as "mixed" | NTBranch);
     const calls = buildNTAuction(p.opener, p.responder) as SeatCall[];
@@ -85,6 +101,25 @@ export function dealScenario(convention: Convention, role: Role, focus: AnyFocus
   }
 
   const p = dealTwoOverOnePair(focus as Focus);
+
+  // Competitive bidding (V6): only wired for Responder practice over a 1H/1S
+  // opening (see interference.ts for the full scope note). When it fires,
+  // the drill is deliberately SHORT -- open, LHO's call, Responder's
+  // reaction -- and that reaction is the scored call, not a gated detour on
+  // the way to something else. Opener's rebid after a competitive auction,
+  // and interference at any other point in the auction, are later releases.
+  const eligibleForInterference = role === "responder" && (p.opening === "1H" || p.opening === "1S");
+  if (eligibleForInterference && shouldDealInterference(intervention)) {
+    const opening = p.opening as "1H" | "1S";
+    const interference = pickInterference(opening);
+    const calls: SeatCall[] = [
+      { by: "opener", rec: { best: p.opening, acceptable: [], explanationIfNotBest: "A 5+ card major, 12-19 HCP, opens 1 of the major." } },
+      { by: "lho", rec: interferenceSeatCall(interference) },
+      { by: "responder", rec: recommendResponderOverInterference(p.responder, opening, interference) },
+    ];
+    return finish(convention, role, p.opener, p.responder, p.opening, calls);
+  }
+
   const oRebid = openerRebid(p.opener, p.responder, p.opening, p.firstCall);
   const calls: SeatCall[] = [
     { by: "opener", rec: { best: p.opening, acceptable: [], explanationIfNotBest: "A 5+ card major, 12-19 HCP, opens 1 of the major." } },

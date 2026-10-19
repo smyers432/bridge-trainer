@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import type { Grade, Hand, Recommendation, Suit } from "@/lib/bridge/types";
 import { handHcp, DIST, distributionPointsForSupport } from "@/lib/bridge/eval";
 import { bidRank, BID_ROWS, gradeBid } from "@/lib/bridge/grade";
-import { dealScenario, CONVENTIONS, NT_FOCUS, WEAK_TWO_FOCUS, type Convention, type Role, type Scenario, type AnyFocus } from "@/lib/bridge/scenario";
+import { dealScenario, CONVENTIONS, NT_FOCUS, WEAK_TWO_FOCUS, type Convention, type Role, type Scenario, type AnyFocus, type InterventionMode } from "@/lib/bridge/scenario";
 import { FOCUS_OPTIONS } from "@/lib/bridge/auction2";
 
 const PALETTE = {
@@ -19,15 +19,16 @@ const REDS = new Set<Suit>(["hearts", "diamonds"]);
 const tierMeta: Record<Grade, { label: string; color: string }> = {
   BEST: { label: "Best", color: PALETTE.best },
   ACCEPTABLE: { label: "Acceptable", color: PALETTE.acc },
-  SYSTEM_VIOLATION: { label: "System violation", color: PALETTE.viol },
+  SYSTEM_VIOLATION: { label: "There's a better bid", color: PALETTE.viol },
 };
 
 function sym(bid: string) {
-  if (bid === "Pass") return "Pass";
+  if (bid === "Pass" || bid === "X" || bid === "XX") return bid;
   return bid[0] + (DENOM_GLYPH[bid.slice(1)] || bid.slice(1));
 }
 function BidText({ bid, size = 15 }: { bid: string; size?: number }) {
   if (bid === "Pass") return <span style={{ fontWeight: 700 }}>Pass</span>;
+  if (bid === "X" || bid === "XX") return <span style={{ fontWeight: 700, fontSize: size, color: PALETTE.red }}>{bid}</span>;
   const level = bid[0], denom = bid.slice(1);
   const isRed = denom === "H" || denom === "D";
   return (
@@ -106,10 +107,12 @@ export default function V3PracticePage() {
   const [convention, setConvention] = useState<Convention>("two_over_one");
   const [role, setRole] = useState<Role>("responder");
   const [focus, setFocus] = useState<AnyFocus>("mixed");
+  const [intervention, setIntervention] = useState<InterventionMode>("none");
   const [scen, setScen] = useState<Scenario | null>(null);
   const [placed, setPlaced] = useState<string[]>([]);
   const [pendingFix, setPendingFix] = useState(false);
   const [firstTier, setFirstTier] = useState<Grade | null>(null);
+  const [firstBid, setFirstBid] = useState<string | null>(null);
   const [scored, setScored] = useState<{ bid: string; tier: Grade; rec: Recommendation } | null>(null);
   const [reveal, setReveal] = useState(false);
   const [stats, setStats] = useState<Record<Grade, number>>({ BEST: 0, ACCEPTABLE: 0, SYSTEM_VIOLATION: 0 });
@@ -121,15 +124,15 @@ export default function V3PracticePage() {
     return a;
   }, []);
 
-  const newDeal = useCallback((conv: Convention, r: Role, f: AnyFocus) => {
-    const s = dealScenario(conv, r, f);
+  const newDeal = useCallback((conv: Convention, r: Role, f: AnyFocus, iv: InterventionMode) => {
+    const s = dealScenario(conv, r, f, iv);
     setScen(s);
     setPlaced(fillEngine([], s));
-    setPendingFix(false); setFirstTier(null); setScored(null); setReveal(false);
+    setPendingFix(false); setFirstTier(null); setFirstBid(null); setScored(null); setReveal(false);
     setCoach({ open: false, loading: false, text: "", err: "" });
   }, [fillEngine]);
 
-  useEffect(() => { newDeal(convention, role, focus); }, [convention, role, focus, newDeal]);
+  useEffect(() => { newDeal(convention, role, focus, intervention); }, [convention, role, focus, intervention, newDeal]);
 
   if (!scen) return null;
   // Support points (HCP + shortness bonus) only mean anything in the Two Over
@@ -150,6 +153,7 @@ export default function V3PracticePage() {
     if (idx !== scen.scoredIndex) {
       // an earlier (gated) user call: must be BEST to proceed
       setFirstTier(tier);
+      setFirstBid(bid);
       if (tier !== "BEST") { setPendingFix(true); return; }
       setPlaced(fillEngine([...placed, bid], scen));
       return;
@@ -168,7 +172,17 @@ export default function V3PracticePage() {
   async function askCoach() {
     if (!scen) return;
     setCoach({ open: true, loading: true, text: "", err: "" });
-    const scoredRec = scen.calls[scen.scoredIndex].rec;
+    // Ground the coach in whichever decision is actually on screen right now,
+    // not always the scored (final) call -- in a two-round drill the FIRST
+    // call is gated (pendingFix) and scored stays null until the student
+    // matches it, so sending scoredRec there fed the coach a different
+    // decision's best bid and reasoning entirely (bug: coach and the on-screen
+    // system call could disagree because they were answering different
+    // questions).
+    const currentIdx = Math.min(placed.length, scen.calls.length - 1);
+    const currentRec = scen.calls[currentIdx].rec;
+    const askedBid = pendingFix ? firstBid : done ? scored?.bid ?? null : null;
+    const askedTier = pendingFix ? firstTier : done ? scored?.tier ?? null : null;
     try {
       // When there's an established (or candidate) trump suit and the student holds
       // 3+ cards there, hand the coach the exact precomputed support-point math
@@ -184,8 +198,8 @@ export default function V3PracticePage() {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
           opening: scen.opening, hand: scen.userHand, hcp: handHcp(scen.userHand),
-          userBid: scored?.bid ?? null, tier: scored?.tier ?? null, best: scoredRec.best,
-          explanation: scoredRec.explanationIfNotBest,
+          userBid: askedBid, tier: askedTier, best: currentRec.best,
+          explanation: currentRec.explanationIfNotBest,
           auction: placed.join(" - "),
           note: `Convention: ${convention === "no_trump" ? "No Trump (1NT opening)" : convention === "weak_two" ? "Weak Two (2D/2H/2S opening)" : "Two Over One"}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.${supportLine}`,
         }),
@@ -198,16 +212,44 @@ export default function V3PracticePage() {
     }
   }
 
-  // auction rows
-  const rows: Array<[string | null, string | null]> = [];
+  // auction rows -- 4 seats (Opener, LHO, Responder, RHO) in bidding-rotation
+  // order. LHO/RHO are opponent columns added for the competitive-bidding
+  // release; today only LHO is ever populated (a single scripted call right
+  // after Opener's opening), and only for Responder drills over 1H/1S. RHO
+  // stays blank until a later release models interference after Responder's
+  // own call too -- the column exists now so that release doesn't need a
+  // table rebuild.
+  const SEAT_COL: Record<string, number> = { opener: 0, lho: 1, responder: 2, rho: 3 };
+  const rows: Array<[string | null, string | null, string | null, string | null]> = [];
   placed.forEach((bid, i) => {
-    if (scen.calls[i].by === "opener") rows.push([bid, null]);
-    else if (rows.length) rows[rows.length - 1][1] = bid;
-    else rows.push([null, bid]);
+    const col = SEAT_COL[scen.calls[i].by] ?? 0;
+    if (col === 0) rows.push([bid, null, null, null]);
+    else {
+      if (!rows.length) rows.push([null, null, null, null]);
+      rows[rows.length - 1][col] = bid;
+    }
   });
 
   const lastBid = placed.length ? placed[placed.length - 1] : null;
-  const legal = (bid: string) => !lastBid || bid === "Pass" || bidRank(bid) > bidRank(lastBid);
+  const lastCallSeat = placed.length ? scen.calls[placed.length - 1].by : null;
+  const legal = (bid: string) => {
+    // Double/redouble never sit on the denomination ladder (see bidRank) --
+    // they have their own narrow legality: a negative double answers a live
+    // opponent suit overcall, a redouble answers a live opponent takeout
+    // double, and neither is ever offered outside the one scripted
+    // interference point this release models.
+    if (bid === "X") return lastCallSeat === "lho" && lastBid !== "X";
+    if (bid === "XX") return lastCallSeat === "lho" && lastBid === "X";
+    if (bid === "Pass") return true;
+    if (!lastBid) return true;
+    // A double doesn't consume bidding space, so a suit/NT bid only needs to
+    // outrank the last REAL bid -- skip back over a lone double when finding
+    // the rank floor (e.g. 1H-(X)-1S is legal: 1S only needs to outrank 1H).
+    const floorBid = lastBid === "X" || lastBid === "XX"
+      ? (placed.length >= 2 ? placed[placed.length - 2] : null)
+      : lastBid;
+    return !floorBid || bidRank(bid) > bidRank(floorBid);
+  };
 
   let prompt = "Deal complete.";
   if (!done) {
@@ -259,6 +301,18 @@ export default function V3PracticePage() {
               <button key={r} className="chip" onClick={() => setRole(r)} style={chip(r === role)}>{r}</button>
             ))}
           </div>
+          {convention === "two_over_one" && role === "responder" && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: PALETTE.muted }}>Opponents</span>
+              {([
+                ["none", "No intervention"],
+                ["with", "With intervention"],
+                ["mixed", "Mixed"],
+              ] as [InterventionMode, string][]).map(([id, label]) => (
+                <button key={id} className="chip" onClick={() => setIntervention(id)} style={chip(id === intervention)}>{label}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         {(() => {
@@ -290,15 +344,19 @@ export default function V3PracticePage() {
             <div>
               <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>Auction</div>
               <div style={{ border: `1px solid ${PALETTE.line}`, borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", background: PALETTE.baize, color: "#F4EFE4", fontSize: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", background: PALETTE.baize, color: "#F4EFE4", fontSize: 12 }}>
                   <div style={{ padding: "6px 10px" }}>Opener{role === "opener" ? " (you)" : ""}</div>
+                  <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>LHO</div>
                   <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>Responder{role === "responder" ? " (you)" : ""}</div>
+                  <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>RHO</div>
                 </div>
                 {rows.length === 0 && <div style={{ padding: 10, fontSize: 13, color: PALETTE.muted }}>Your call opens the auction.</div>}
                 {rows.map((r, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderTop: `1px solid ${PALETTE.line}` }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: `1px solid ${PALETTE.line}` }}>
                     <div style={{ padding: "8px 10px" }}>{r[0] ? <BidText bid={r[0]} /> : ""}</div>
                     <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[1] ? <BidText bid={r[1]} /> : ""}</div>
+                    <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[2] ? <BidText bid={r[2]} /> : ""}</div>
+                    <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[3] ? <BidText bid={r[3]} /> : ""}</div>
                   </div>
                 ))}
               </div>
@@ -310,16 +368,23 @@ export default function V3PracticePage() {
 
           {!done && !pendingFix && (
             <div style={{ marginTop: 10 }}>
-              {BID_ROWS.map((rowArr, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: rowArr.length === 1 ? "flex-start" : "space-between" }}>
-                  {rowArr.map((bid) => (
-                    <button key={bid} className="bidbtn" disabled={!boxActive || !legal(bid)} onClick={() => onUserBid(bid)}
-                      style={{ ...btnBase, flex: rowArr.length === 1 ? "0 0 auto" : 1, padding: rowArr.length === 1 ? "9px 22px" : btnBase.padding }}>
-                      <BidText bid={bid} />
-                    </button>
-                  ))}
-                </div>
-              ))}
+              {BID_ROWS.map((rowArr, i) => {
+                // The Pass row also carries double/redouble, but only when one is
+                // actually live right now -- see legal() -- so every screen that
+                // isn't mid-interference looks exactly as it did before this row
+                // existed.
+                const row = i === 0 ? [...rowArr, ...(["X", "XX"] as const).filter((b) => boxActive && legal(b))] : rowArr;
+                return (
+                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, justifyContent: row.length === 1 ? "flex-start" : "space-between" }}>
+                    {row.map((bid) => (
+                      <button key={bid} className="bidbtn" disabled={!boxActive || !legal(bid)} onClick={() => onUserBid(bid)}
+                        style={{ ...btnBase, flex: row.length === 1 ? "0 0 auto" : 1, padding: row.length === 1 ? "9px 22px" : btnBase.padding }}>
+                        <BidText bid={bid} />
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -349,7 +414,7 @@ export default function V3PracticePage() {
           )}
 
           <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="ghost" onClick={() => newDeal(convention, role, focus)}
+            <button className="ghost" onClick={() => newDeal(convention, role, focus, intervention)}
               style={{ fontFamily: "inherit", cursor: "pointer", border: "none", borderRadius: 8, background: PALETTE.baize, color: "#F4EFE4", padding: "10px 18px", fontWeight: 700, fontSize: 14 }}>New deal</button>
             {done && (
               <button className="ghost" onClick={() => setReveal((v) => !v)}

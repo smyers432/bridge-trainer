@@ -9,7 +9,13 @@ export function gradeBid(userBid: string, rec: Recommendation): Grade {
 const DENOM_IDX: Record<string, number> = { C: 0, D: 1, H: 2, S: 3, NT: 4 };
 
 export function bidRank(bid: string): number {
-  if (bid === "Pass") return -1;
+  // Pass, and the two competitive calls (double / redouble) added for the
+  // interference release, never occupy a rung on the denomination ladder --
+  // they don't consume bidding space the way a suit/NT bid does, so they
+  // rank below every real bid. Callers that need double/redouble legality
+  // (can you double right now? can you redouble right now?) use their own
+  // rule in interference.ts / page.tsx rather than this rank.
+  if (bid === "Pass" || bid === "X" || bid === "XX") return -1;
   return parseInt(bid[0], 10) * 5 + DENOM_IDX[bid.slice(1)];
 }
 
