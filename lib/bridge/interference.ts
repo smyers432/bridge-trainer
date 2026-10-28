@@ -142,10 +142,39 @@ export function recommendResponderOverInterference(
     };
   }
 
-  // Overcall: if the natural call still outranks it, nothing changes -- a
+  // Overcall: Bergen raises (3C/3D) are OFF once the opponents overcall --
+  // per the user's ruling, a cue-bid of the overcalled suit takes over. The
+  // limit raise (Bergen 3D, 10-12 support points, 4+ trumps) becomes a cue-bid
+  // of LHO's suit (artificial, forcing, a fit-showing limit raise or better);
+  // the constructive raise (Bergen 3C, 7-9 support points) becomes a simple
+  // raise of opener's major, at the cheapest legal level. This check runs
+  // BEFORE the "natural call still outranks the overcall" shortcut below,
+  // since 3C/3D would otherwise sail through it untouched.
+  const overRank = bidRank(interference.bid);
+  if (interference.suit && (natural.best === "3C" || natural.best === "3D")) {
+    if (natural.best === "3D") {
+      const cueLevel = parseInt(interference.bid[0], 10) + 1;
+      const cueBid = cueLevel + DEN[interference.suit];
+      return {
+        best: cueBid,
+        acceptable: [],
+        explanationIfNotBest:
+          `Cue-bid of LHO's suit: Bergen raises are off after an overcall, so a limit raise (10\u201312 support points, 4+ trumps) is shown by cue-bidding the overcalled suit (artificial, forcing) instead of Bergen 3\u2666.`,
+      };
+    }
+    const twoM = "2" + DEN[trump];
+    const raise = bidRank(twoM) > overRank ? twoM : "3" + DEN[trump];
+    return {
+      best: raise,
+      acceptable: [],
+      explanationIfNotBest:
+        `Simple raise: Bergen raises are off after an overcall, so a constructive raise (7\u20139 support points, 4+ trumps) is just a natural raise of opener's major -- a cue-bid is reserved for limit-raise strength or better.`,
+    };
+  }
+
+  // If the natural call still outranks the overcall, nothing changes -- a
   // real fit (4+ support), a strong 2/1 game force, or a Jacoby/splinter hand
   // almost always still has a live natural call the overcall didn't reach.
-  const overRank = bidRank(interference.bid);
   if (natural.best !== "Pass" && bidRank(natural.best) > overRank) {
     return { ...natural, explanationIfNotBest: natural.explanationIfNotBest + " (Still available over the overcall.)" };
   }
