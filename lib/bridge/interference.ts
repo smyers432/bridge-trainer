@@ -1,5 +1,5 @@
 import { Hand, Opening, Recommendation, Suit } from "./types";
-import { handHcp, lengthPoints, suitLength } from "./eval";
+import { countShortages, handHcp, suitLength } from "./eval";
 import { bidRank } from "./grade";
 import { recommendResponder } from "./recommend";
 
@@ -78,37 +78,47 @@ export function interferenceSeatCall(interference: Interference): Recommendation
 }
 
 /**
+ * Dummy-point scale for the competitive cue bid (user ruling 2026-11-05):
+ * Responder will be dummy, so shortness in the side suits counts toward the
+ * 10-point cue-bid threshold. Applied with 3+ trumps. NOTE: this is the
+ * heavier "4+ trumps" scale also used for 3-card support, which differs from
+ * DIST.support_exactly_3_trump (3/2/1) used elsewhere in the engine -- kept
+ * in one named constant so it is a one-line change.
+ */
+const CUE_DUMMY_POINTS = { void: 5, singleton: 3, doubleton: 1 } as const;
+
+/** HCP + dummy points for a 3+ card fit with opener's major (side-suit shortness only). */
+function cueTotalPoints(hand: Hand, trump: Suit, tc: number): number {
+  if (tc < 3) return handHcp(hand);
+  const { voids, singletons, doubletons } = countShortages(hand, trump);
+  return (
+    handHcp(hand) +
+    voids * CUE_DUMMY_POINTS.void +
+    singletons * CUE_DUMMY_POINTS.singleton +
+    doubletons * CUE_DUMMY_POINTS.doubleton
+  );
+}
+
+/**
  * Responder's call over interference (1H/1S - [overcall or X] - ?).
  *
- * Standard-textbook negative-double / redouble thresholds -- there's no
- * Sutton-specific guidance yet for competitive auctions, so these are
- * flagged defaults for the user to correct, same as every other threshold
- * in this engine started out:
- *   - Negative double: 6+ HCP, fewer than 4 cards in opener's major, and the
- *     overcall took away the natural (no-interference) call.
- *   - Redouble: 10+ HCP, fewer than 4 cards in opener's major, and the
- *     natural call would otherwise have been the catch-all 1NT forcing --
- *     redouble shows the extra strength a quiet 1NT forcing can't, now that
- *     LHO has doubled.
- *   - Cue-bid (LHO's own suit, one level higher): when the overcall blocks
- *     a hand that's game-forcing by this system's OWN cutoff (13+ HCP +
- *     length -- the identical number recommend.ts already uses for the
- *     natural 2/1 game force) and there's no 4-card support for opener's
- *     major to raise with instead. A cue-bid here is artificial and
- *     forcing -- it says "game-forcing values, no fit shown yet" without
- *     committing to a suit, keeping the force alive instead of underselling
- *     the hand as a plain negative double would. Added per the user's
- *     explicit flag that resolving every blocked game-forcing hand as a
- *     double was training an incorrect strategy.
- *
- * Known v1 simplification: this cue-bid promises values only, the same way
- * recommend.ts's own natural 2/1 call does not yet distinguish "game-force,
- * no 4-card support" hands by suit quality -- it doesn't yet layer in a
- * second-round "cue-bid shows a fit" meaning for when responder DOES hold
- * 4-card support but the overcall happened to reach high enough to block
- * even a support bid (today's engine never deals an overcall that high, so
- * this can't currently occur, but a future release raising the overcall
- * ceiling would need to revisit it).
+ * Competitive rules (user rulings 2026-10-28 and 2026-11-05; Sutton's
+ * materials do not cover competitive auctions, so these are the user's own):
+ *   - Bergen raises are OFF after an overcall.
+ *   - Cue bid (LHO's suit, one level higher; artificial, forcing): 3+ cards
+ *     in opener's major AND 10+ total points (HCP + dummy points, scale
+ *     above). It absorbs Bergen limit raises, Jacoby 2NT and splinters over
+ *     an overcall. Takes priority over a double when a hand fits both.
+ *   - Negative double (X): 4+ cards in the UNBID major, 6+ HCP when the
+ *     overcall is at the 1 level, 10+ HCP when it is at the 2 level. If the
+ *     overcall is in the other major there is no unbid major, so no double.
+ *   - Constructive raise (Bergen 3C hand, 7-9 support points, 4+ trumps):
+ *     a simple raise of opener's major at the cheapest legal level.
+ *   - Redouble (over a takeout double): 10+ HCP, fewer than 4-card support,
+ *     no natural call better than 1NT forcing (unchanged).
+ *   - Otherwise the ordinary natural call stands if it still outranks the
+ *     overcall; else pass.
+ * Responder-only; opener's rebid in competition is not modelled yet.
  */
 export function recommendResponderOverInterference(
   hand: Hand,
@@ -142,69 +152,60 @@ export function recommendResponderOverInterference(
     };
   }
 
-  // Overcall: Bergen raises (3C/3D) are OFF once the opponents overcall --
-  // per the user's ruling, a cue-bid of the overcalled suit takes over. The
-  // limit raise (Bergen 3D, 10-12 support points, 4+ trumps) becomes a cue-bid
-  // of LHO's suit (artificial, forcing, a fit-showing limit raise or better);
-  // the constructive raise (Bergen 3C, 7-9 support points) becomes a simple
-  // raise of opener's major, at the cheapest legal level. This check runs
-  // BEFORE the "natural call still outranks the overcall" shortcut below,
-  // since 3C/3D would otherwise sail through it untouched.
   const overRank = bidRank(interference.bid);
-  if (interference.suit && (natural.best === "3C" || natural.best === "3D")) {
-    if (natural.best === "3D") {
-      const cueLevel = parseInt(interference.bid[0], 10) + 1;
-      const cueBid = cueLevel + DEN[interference.suit];
-      return {
-        best: cueBid,
-        acceptable: [],
-        explanationIfNotBest:
-          `Cue-bid of LHO's suit: Bergen raises are off after an overcall, so a limit raise (10\u201312 support points, 4+ trumps) is shown by cue-bidding the overcalled suit (artificial, forcing) instead of Bergen 3\u2666.`,
-      };
-    }
+  const overLevel = parseInt(interference.bid[0], 10);
+  const overSuit = interference.suit!;
+
+  // (1) Cue bid: 3+ support and 10+ total points -- checked first, ahead of
+  // every natural call, double and raise.
+  const total = cueTotalPoints(hand, trump, tc);
+  if (tc >= 3 && total >= 10) {
+    const cueBid = overLevel + 1 + DEN[overSuit];
+    return {
+      best: cueBid,
+      acceptable: [],
+      explanationIfNotBest:
+        `Cue-bid of LHO's suit: ${tc}-card support for opener's major and ${total} total points (${hcp} HCP + dummy points) -- Bergen, Jacoby 2NT and splinters are off after an overcall, so a cue-bid of the overcalled suit (artificial, forcing) shows a fit and 10+ points.`,
+    };
+  }
+
+  // (2) Constructive raise: the Bergen 3C hand (7-9 support points, 4+ trumps)
+  // becomes a simple raise at the cheapest legal level.
+  if (natural.best === "3C") {
     const twoM = "2" + DEN[trump];
     const raise = bidRank(twoM) > overRank ? twoM : "3" + DEN[trump];
     return {
       best: raise,
       acceptable: [],
       explanationIfNotBest:
-        `Simple raise: Bergen raises are off after an overcall, so a constructive raise (7\u20139 support points, 4+ trumps) is just a natural raise of opener's major -- a cue-bid is reserved for limit-raise strength or better.`,
+        `Simple raise: Bergen raises are off after an overcall, so a constructive raise (7\u20139 support points, 4+ trumps) is just a natural raise of opener's major -- a cue-bid is reserved for 3+ card support and 10+ total points.`,
     };
   }
 
-  // If the natural call still outranks the overcall, nothing changes -- a
-  // real fit (4+ support), a strong 2/1 game force, or a Jacoby/splinter hand
-  // almost always still has a live natural call the overcall didn't reach.
-  if (natural.best !== "Pass" && bidRank(natural.best) > overRank) {
+  // (3) If the natural call still outranks the overcall, nothing changes.
+  if (natural.best !== "Pass" && natural.best !== "3D" && bidRank(natural.best) > overRank) {
     return { ...natural, explanationIfNotBest: natural.explanationIfNotBest + " (Still available over the overcall.)" };
   }
 
-  // The overcall ate the natural call's bidding room (typically a blocked
-  // 1-level new suit or a blocked 1NT forcing). A hand that's game-forcing
-  // by this system's own cutoff (same 13+ HCP+length recommend.ts uses for
-  // the natural 2/1 call) shouldn't be downgraded to a plain negative
-  // double just because the overcall landed on its suit -- cue-bid LHO's
-  // suit instead to keep the force alive.
-  const naturalPoints = handHcp(hand) + lengthPoints(hand);
-  if (tc < 4 && naturalPoints >= 13 && interference.suit) {
-    const cueLevel = parseInt(interference.bid[0], 10) + 1;
-    const cueBid = cueLevel + DEN[interference.suit];
-    return {
-      best: cueBid,
-      acceptable: [],
-      explanationIfNotBest:
-        `Cue-bid: ${naturalPoints} HCP+length (game-forcing by this system's own cutoff), fewer than 4-card support for opener's major, and the overcall took the natural call away -- cue-bidding LHO's own suit (artificial, forcing) keeps the force alive instead of underselling the hand with a negative double.`,
-    };
+  // (4) Negative double: 4+ cards in the unbid major, 6+ HCP at the 1 level,
+  // 10+ HCP at the 2 level. No unbid major if the overcall is in the other major.
+  const otherMajor: Suit = trump === "hearts" ? "spades" : "hearts";
+  if (overSuit !== otherMajor && suitLength(hand, otherMajor) >= 4) {
+    const need = overLevel === 1 ? 6 : 10;
+    if (hcp >= need) {
+      return {
+        best: "X",
+        acceptable: [],
+        explanationIfNotBest:
+          `Negative double: 4+ cards in the unbid major (${otherMajor}) and ${hcp} HCP (needs ${need}+ over a ${overLevel}-level overcall) -- the double shows the unbid major without committing to a suit contract.`,
+      };
+    }
   }
 
-  // Below game-forcing strength: show values via a negative double, or pass.
-  if (tc < 4 && hcp >= 6) {
-    return {
-      best: "X",
-      acceptable: [],
-      explanationIfNotBest:
-        "Negative double: 6+ HCP, fewer than 4-card support for opener's major, and the overcall took away the natural call -- double shows values without committing to a suit.",
-    };
-  }
-  return { best: "Pass", acceptable: ["X"], explanationIfNotBest: "Too weak to act over the overcall (fewer than 6 HCP, no fit)." };
+  return {
+    best: "Pass",
+    acceptable: [],
+    explanationIfNotBest:
+      "No call fits over the overcall: not enough support/points for a cue-bid (3+ trumps and 10+ total points), no 4-card unbid major with enough HCP for a negative double (6+ at the 1 level, 10+ at the 2 level), and no natural call that outranks the overcall.",
+  };
 }
