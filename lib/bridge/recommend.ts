@@ -194,8 +194,10 @@ function overMinor(hand: Hand, op: "1C" | "1D"): Recommendation {
   const di = suitLength(hand, "diamonds");
   const cl = suitLength(hand, "clubs");
 
-  if (he >= 4) return { best: "1H", acceptable: ["1S", "1NT"], explanationIfNotBest: "Show a 4-card major up the line." };
-  if (sp >= 4) return { best: "1S", acceptable: ["1NT"], explanationIfNotBest: "Show a 4-card major." };
+  // A jump shift in the major (2H / 2S) is an acceptable alternative with game-forcing values
+  // (13+ HCP) and a 5+ card suit; the one-level response is still best.
+  if (he >= 4) return { best: "1H", acceptable: ["1S", "1NT", ...(he >= 5 && hcp >= 13 ? ["2H"] : [])], explanationIfNotBest: "Show a 4-card major up the line." + (he >= 5 && hcp >= 13 ? " A jump shift (2\u2665) is acceptable with 13+ HCP, but 1\u2665 is best." : "") };
+  if (sp >= 4) return { best: "1S", acceptable: ["1NT", ...(sp >= 5 && hcp >= 13 ? ["2S"] : [])], explanationIfNotBest: "Show a 4-card major." + (sp >= 5 && hcp >= 13 ? " A jump shift (2\u2660) is acceptable with 13+ HCP, but 1\u2660 is best." : "") };
   if (op === "1C" && di >= 4 && hcp >= 6) return { best: "1D", acceptable: ["1NT"], explanationIfNotBest: "Over 1\u2663, show a real diamond suit before 1NT." };
   if (op === "1D" && cl >= 4 && hcp >= 13) return { best: "2C", acceptable: ["1NT"], explanationIfNotBest: "1\u2666\u20132\u2663 is game forcing (2/1)." };
   if (hcp >= 6) return { best: "1NT", acceptable: [], explanationIfNotBest: "Natural 1NT (no 4-card major)." };

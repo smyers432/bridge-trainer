@@ -4,8 +4,8 @@ import React, { useState, useCallback, useEffect } from "react";
 import type { Grade, Hand, Recommendation, Suit } from "@/lib/bridge/types";
 import { handHcp, DIST, distributionPointsForSupport } from "@/lib/bridge/eval";
 import { bidRank, BID_ROWS, gradeBid } from "@/lib/bridge/grade";
-import { dealScenario, CONVENTIONS, NT_FOCUS, WEAK_TWO_FOCUS, type Convention, type Role, type Scenario, type AnyFocus, type InterventionMode } from "@/lib/bridge/scenario";
-import { FOCUS_OPTIONS } from "@/lib/bridge/auction2";
+import type { Scenario } from "@/lib/bridge/scenario";
+import { dealPractice, APPROACHES, CONV_CHIPS, CONV_LABEL, availableConventions, type Approach, type ConvChoice, type Role, type InterventionMode } from "@/lib/bridge/practice";
 
 const PALETTE = {
   bg: "#EFEAE0", card: "#FBF9F4", baize: "#14493A", ink: "#1B1B1A",
@@ -104,9 +104,9 @@ function HandDiagram({ hand, label, trumpSuit }: { hand: Hand; label: string; tr
 }
 
 export default function V3PracticePage() {
-  const [convention, setConvention] = useState<Convention>("two_over_one");
+  const [approach, setApproach] = useState<Approach>("two_over_one");
   const [role, setRole] = useState<Role>("responder");
-  const [focus, setFocus] = useState<AnyFocus>("mixed");
+  const [conv, setConv] = useState<ConvChoice>("mixed");
   const [intervention, setIntervention] = useState<InterventionMode>("none");
   const [scen, setScen] = useState<Scenario | null>(null);
   const [placed, setPlaced] = useState<string[]>([]);
@@ -124,15 +124,15 @@ export default function V3PracticePage() {
     return a;
   }, []);
 
-  const newDeal = useCallback((conv: Convention, r: Role, f: AnyFocus, iv: InterventionMode) => {
-    const s = dealScenario(conv, r, f, iv);
+  const newDeal = useCallback((ap: Approach, r: Role, c: ConvChoice, iv: InterventionMode) => {
+    const s = dealPractice(ap, r, c, iv);
     setScen(s);
     setPlaced(fillEngine([], s));
     setPendingFix(false); setFirstTier(null); setFirstBid(null); setScored(null); setReveal(false);
     setCoach({ open: false, loading: false, text: "", err: "" });
   }, [fillEngine]);
 
-  useEffect(() => { newDeal(convention, role, focus, intervention); }, [convention, role, focus, intervention, newDeal]);
+  useEffect(() => { newDeal(approach, role, conv, intervention); }, [approach, role, conv, intervention, newDeal]);
 
   if (!scen) return null;
   // Support points (HCP + shortness bonus) only mean anything in the Two Over
@@ -140,7 +140,7 @@ export default function V3PracticePage() {
   // No Trump has no trump suit, and Weak Two's own raise logic doesn't use
   // this table, so trumpSuit stays null there and the breakdown line is hidden.
   const twoOverOneTrump: Suit | null =
-    convention === "two_over_one" ? (scen.opening === "1S" ? "spades" : scen.opening === "1H" ? "hearts" : null) : null;
+    scen.convention === "two_over_one" && scen.conv !== CONV_LABEL.nmf ? (scen.opening === "1S" ? "spades" : scen.opening === "1H" ? "hearts" : null) : null;
   const done = placed.length === scen.calls.length;
   const nextIndex = placed.length;
   const boxActive = !done && !pendingFix && nextIndex < scen.calls.length && scen.userIndices.includes(nextIndex);
@@ -201,7 +201,7 @@ export default function V3PracticePage() {
           userBid: askedBid, tier: askedTier, best: currentRec.best,
           explanation: currentRec.explanationIfNotBest,
           auction: placed.join(" - "),
-          note: `Convention: ${convention === "no_trump" ? "No Trump (1NT opening)" : convention === "weak_two" ? "Weak Two (2D/2H/2S opening)" : "Two Over One"}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.${supportLine}`,
+          note: `Approach: ${approach === "basic" ? "Basic (beginner rule set: natural bids, 1NT transfers + Stayman)" : "2/1 (Sutton)"}. Convention being practiced: ${scen.conv ?? ""}. The student is in the ${role} seat; their ${role === "opener" ? "rebid" : "continuation"} is being graded.${supportLine}`,
         }),
       });
       const data = await res.json();
@@ -253,7 +253,7 @@ export default function V3PracticePage() {
 
   let prompt = "Deal complete.";
   if (!done) {
-    if (pendingFix) prompt = "That isn't the system call here.";
+    if (pendingFix) prompt = firstTier === "ACCEPTABLE" ? "That is an acceptable call, but the drill continues with the system call." : "That isn't the system call here.";
     else if (nextIndex === scen.userIndices[0]) prompt = role === "opener" ? "Your opening call." : "Your call as responder.";
     else prompt = `Partner bid ${sym(placed[nextIndex - 1])}. ${role === "opener" ? "Your rebid?" : "Your call?"}`;
   }
@@ -290,9 +290,9 @@ export default function V3PracticePage() {
 
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "16px 0 4px", alignItems: "center" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: PALETTE.muted }}>Convention</span>
-            {CONVENTIONS.map((c) => (
-              <button key={c.id} className="chip" onClick={() => { setConvention(c.id); setFocus("mixed"); }} style={chip(c.id === convention)}>{c.label}</button>
+            <span style={{ fontSize: 13, color: PALETTE.muted }}>Bidding approach</span>
+            {APPROACHES.map((a) => (
+              <button key={a.id} className="chip" onClick={() => { setApproach(a.id); if (conv !== "mixed" && !availableConventions(a.id).includes(conv)) setConv("mixed"); }} style={chip(a.id === approach)}>{a.label}</button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -301,7 +301,7 @@ export default function V3PracticePage() {
               <button key={r} className="chip" onClick={() => setRole(r)} style={chip(r === role)}>{r}</button>
             ))}
           </div>
-          {convention === "two_over_one" && role === "responder" && (
+          {approach === "two_over_one" && role === "responder" && (conv === "mixed" || conv === "bergen" || conv === "jacoby_2nt") && (
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ fontSize: 13, color: PALETTE.muted }}>Opponents</span>
               {([
@@ -315,29 +315,16 @@ export default function V3PracticePage() {
           )}
         </div>
 
-        {(() => {
-          const opts = convention === "no_trump" ? NT_FOCUS : convention === "weak_two" ? WEAK_TWO_FOCUS : FOCUS_OPTIONS;
-          if (opts.length <= 1) return null;
-          return (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "4px 0" }}>
-              <span style={{ fontSize: 13, color: PALETTE.muted }}>Response</span>
-              {opts.map((f) => (
-                <button key={f.id} className="chip" onClick={() => setFocus(f.id)} style={chip(f.id === focus)}>{f.label}</button>
-              ))}
-            </div>
-          );
-        })()}
-
-        {convention === "two_over_one" && focus === "drury" && (
-          <div style={{ fontSize: 12.5, color: PALETTE.muted, fontStyle: "italic", margin: "2px 0 4px" }}>
-            Partner opened in the 3rd or 4th seat, after 1-2 earlier passes {"—"} you (as responder) have already passed too.
-          </div>
-        )}
-        {convention === "two_over_one" && focus === "splinter" && (
-          <div style={{ fontSize: 12.5, color: PALETTE.muted, fontStyle: "italic", margin: "2px 0 4px" }}>
-            Responder holds 4+ card support, 12+ support points, and a singleton or void on the side {"—"} splinter now instead of Jacoby 2NT.
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "4px 0" }}>
+          <span style={{ fontSize: 13, color: PALETTE.muted }}>Conventions</span>
+          {CONV_CHIPS.map((c) => {
+            const ok = c.id === "mixed" || availableConventions(approach).includes(c.id);
+            return (
+              <button key={c.id} className="chip" disabled={!ok} title={ok ? undefined : "Not part of the Basic approach"}
+                onClick={() => setConv(c.id)} style={{ ...chip(c.id === conv), opacity: ok ? 1 : 0.35, cursor: ok ? "pointer" : "default" }}>{c.label}</button>
+            );
+          })}
+        </div>
 
         <section style={{ background: PALETTE.card, border: `1px solid ${PALETTE.line}`, borderRadius: 14, padding: 20, marginTop: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -391,6 +378,7 @@ export default function V3PracticePage() {
           {pendingFix && (
             <div style={{ marginTop: 12, borderLeft: `3px solid ${PALETTE.viol}`, background: "#FBEDED", borderRadius: "0 8px 8px 0", padding: "12px 14px" }}>
               <div style={{ fontSize: 14.5, marginBottom: 6 }}>
+                {firstTier === "ACCEPTABLE" && firstBid && (<>Your <BidText bid={firstBid} /> is an acceptable alternative (not scored). </>)}
                 The system call here is <BidText bid={fixRec.best} /> . <span style={{ color: PALETTE.muted }}>{fixRec.explanationIfNotBest}</span>
               </div>
               <button className="ghost" onClick={continueWithBest}
@@ -400,6 +388,9 @@ export default function V3PracticePage() {
             </div>
           )}
 
+          {done && scored && scen.conv && (
+            <div style={{ marginTop: 12, fontSize: 12.5, color: PALETTE.muted }}>Convention in this deal: <strong style={{ color: PALETTE.ink }}>{scen.conv}</strong></div>
+          )}
           {done && scored && (
             <div style={{ marginTop: 14, display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
               <div className="stamp" style={{ animation: "stampin .18s ease", transform: "rotate(-2deg)", border: `2.5px solid ${tierMeta[scored.tier].color}`, color: tierMeta[scored.tier].color, borderRadius: 8, padding: "6px 12px", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, fontSize: 14, whiteSpace: "nowrap" }}>
@@ -414,7 +405,7 @@ export default function V3PracticePage() {
           )}
 
           <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="ghost" onClick={() => newDeal(convention, role, focus, intervention)}
+            <button className="ghost" onClick={() => newDeal(approach, role, conv, intervention)}
               style={{ fontFamily: "inherit", cursor: "pointer", border: "none", borderRadius: 8, background: PALETTE.baize, color: "#F4EFE4", padding: "10px 18px", fontWeight: 700, fontSize: 14 }}>New deal</button>
             {done && (
               <button className="ghost" onClick={() => setReveal((v) => !v)}
@@ -451,7 +442,7 @@ export default function V3PracticePage() {
 
         <footer style={{ marginTop: 22, fontSize: 11.5, color: PALETTE.muted, lineHeight: 1.5 }}>
           Two-round drill. Grading is deterministic (Rulebook v1); the second call is scored. Coach is live AI for explanation only.
-          V5 scope: Two Over One (2/1 GF + Bergen + Jacoby 2NT + 1NT forcing + Simple Raise/Help Suit Game Try + Reverse Drury + Splinter with a simple Roman Keycard 1430 follow-up), No Trump (Stayman, Puppet, Jacoby transfers, 2NT/3NT, and a quantitative 4NT slam invite), and Weak Two Bids (2D/2H/2S openings, responder's full decision tree, opener's feature-ask and new-suit follow-ups). Unusual NT, Western Cuebid, preemptive jump overcalls, and interference over a weak two are deferred — all of them require modeling opponents' calls, which this trainer doesn't yet do.
+          V7: choose a bidding approach (2/1 or Basic), a seat, and a convention or Mixed; Basic offers Stayman and Transfers only, and New Minor Forcing and the Strong 2♣ opening are new (Sutton). V5 scope: Two Over One (2/1 GF + Bergen + Jacoby 2NT + 1NT forcing + Simple Raise/Help Suit Game Try + Splinter with a simple Roman Keycard 1430 follow-up), No Trump (Stayman, Puppet, Jacoby transfers, 2NT/3NT, and a quantitative 4NT slam invite), and Weak Two Bids (2D/2H/2S openings, responder's full decision tree, opener's feature-ask and new-suit follow-ups). Unusual NT, Western Cuebid, preemptive jump overcalls, and interference over a weak two are deferred — all of them require modeling opponents' calls, which this trainer doesn't yet do.
         </footer>
       </div>
     </div>

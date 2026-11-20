@@ -72,13 +72,20 @@ function qualifiesForSplinter(resp: Hand, opening: "1H" | "1S"): string | null {
   return pickSplinter(resp, opening);
 }
 
-export function dealSplinterPair(): SplinterPair {
-  for (let i = 0; i < 100000; i++) {
+/**
+ * opts.wasted (optional): true = deal only pairs where opener HAS wasted values in
+ * responder's shortness suit (opener signs off in game), false = only pairs where she
+ * has none (opener asks for keycards). Used by the stand-alone RKC drill.
+ */
+export function dealSplinterPair(opts: { wasted?: boolean } = {}): SplinterPair {
+  for (let i = 0; i < 200000; i++) {
     const { a, b } = dealTwoHands();
     for (const [op, resp] of [[a, b], [b, a]] as [Hand, Hand][]) {
       const opening = opensMajor(op);
       if (!opening) continue;
-      if (!qualifiesForSplinter(resp, opening)) continue;
+      const call = qualifiesForSplinter(resp, opening);
+      if (!call) continue;
+      if (opts.wasted !== undefined && hasWastedValues(op, SUIT_OF[call.slice(1)]) !== opts.wasted) continue;
       return { opener: op, responder: resp, opening };
     }
   }
@@ -163,7 +170,12 @@ function openerAfterKeycards(opener: Hand, responder: Hand, trump: Suit, respons
 
 /* ---------- assemble the full best-line auction ---------- */
 
-export function buildSplinterAuction(opener: Hand, responder: Hand, opening: "1H" | "1S"): SplinterSeatCall[] {
+/**
+ * mode "splinter": the Splinter drill -- ends at opener's rebid (4M sign-off, or the
+ * 4NT keycard ask, which is where RKC begins).
+ * mode "rkc": the full line including the 1430 response and opener's final call.
+ */
+export function buildSplinterAuction(opener: Hand, responder: Hand, opening: "1H" | "1S", mode: "splinter" | "rkc" = "rkc"): SplinterSeatCall[] {
   const calls: SplinterSeatCall[] = [];
   const push = (by: "opener" | "responder", rec: Recommendation) => calls.push({ by, rec });
   const trump = majorOf(opening);
@@ -185,6 +197,7 @@ export function buildSplinterAuction(opener: Hand, responder: Hand, opening: "1H
   }
 
   push("opener", { best: "4NT", acceptable: [], explanationIfNotBest: `No wasted values opposite the splinter (nothing higher than the ace in ${splinterSuit}) — the hands fit well; ask for keycards with Roman Keycard Blackwood (1430).` });
+  if (mode === "splinter") return calls;
   const resp2 = keycardResponse(responder, trump);
   push("responder", resp2);
   push("opener", openerAfterKeycards(opener, responder, trump, resp2.best));

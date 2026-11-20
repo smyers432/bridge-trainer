@@ -4,7 +4,7 @@ export type Rank =
   | "A" | "K" | "Q" | "J"
   | "10" | "9" | "8" | "7" | "6" | "5" | "4" | "3" | "2";
 
-export type Opening = "1C" | "1D" | "1H" | "1S" | "1NT" | "2D" | "2H" | "2S";
+export type Opening = "1C" | "1D" | "1H" | "1S" | "1NT" | "2C" | "2D" | "2H" | "2S";
 
 export type Grade = "BEST" | "ACCEPTABLE" | "SYSTEM_VIOLATION";
 

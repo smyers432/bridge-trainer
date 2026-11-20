@@ -34,6 +34,7 @@ export type Scenario = {
                                      // the system's call to proceed, but isn't graded
   userHand: Hand;
   partnerHand: Hand;
+  conv?: string;                    // practice.ts: which convention this deal drills (shown after grading)
 };
 
 export const CONVENTIONS: { id: Convention; label: string }[] = [
@@ -46,7 +47,7 @@ export { NT_FOCUS, WEAK_TWO_FOCUS };
 export type { NTBranch };
 export type AnyFocus = Focus | NTBranch;
 
-function finish(convention: Convention, role: Role, opener: Hand, responder: Hand, opening: Opening, calls: SeatCall[]): Scenario {
+export function finish(convention: Convention, role: Role, opener: Hand, responder: Hand, opening: Opening, calls: SeatCall[]): Scenario {
   // Every index belonging to this seat is interactive. Most branches only ever
   // give a seat two calls (e.g. opener's opening + rebid in the 2/1 family), but
   // several NT/Drury/Splinter lines give opener a THIRD decision further down the

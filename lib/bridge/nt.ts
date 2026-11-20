@@ -45,7 +45,7 @@ function balancedNT(h: Hand): boolean {
   const longest = Math.max(...SUITS.map((s) => suitLength(h, s)));
   return sh.voids === 0 && sh.singletons === 0 && sh.doubletons <= 1 && longest <= 5;
 }
-function opensNT(h: Hand): boolean {
+export function opensNT(h: Hand): boolean {
   const hcp = handHcp(h);
   return hcp >= 15 && hcp <= 17 && balancedNT(h);
 }
@@ -89,7 +89,7 @@ export function recommendNTResponse(h: Hand): { rec: Recommendation; branch: NTB
 
 /* ---------- Stayman branch ---------- */
 
-function openerStaymanAnswer(opener: Hand): string {
+export function openerStaymanAnswer(opener: Hand): string {
   const he = suitLength(opener, "hearts"), sp = suitLength(opener, "spades");
   if (he >= 4) return "2H"; // both majors bid hearts up the line (dealing avoids 4-4 here)
   if (sp >= 4) return "2S";
@@ -101,7 +101,7 @@ function staymanResponderCont(responder: Hand, answer: string): Recommendation {
   if (answer === "2S" && sp >= 4) return { best: "3S", acceptable: [], explanationIfNotBest: "4-4 spade fit; invite game with 3\u2660." };
   return { best: "2NT", acceptable: [], explanationIfNotBest: "No 4-4 fit; invite in notrump with 2NT." };
 }
-function openerAfterStaymanInvite(opener: Hand, cont: string): Recommendation {
+export function openerAfterStaymanInvite(opener: Hand, cont: string): Recommendation {
   const max = handHcp(opener) >= 16;
   if (cont === "3H") return { best: max ? "4H" : "Pass", acceptable: [], explanationIfNotBest: max ? "Maximum; accept game." : "Minimum; pass the invitation." };
   if (cont === "3S") return { best: max ? "4S" : "Pass", acceptable: [], explanationIfNotBest: max ? "Maximum; accept game." : "Minimum; pass the invitation." };
@@ -159,14 +159,14 @@ function openerPuppetPlace(opener: Hand, cont: string): Recommendation | null {
 /* ---------- Transfer branch ---------- */
 
 function transferTarget(firstCall: string): Suit { return firstCall === "2D" ? "hearts" : "spades"; }
-function openerTransferAccept(opener: Hand, firstCall: string): Recommendation {
+export function openerTransferAccept(opener: Hand, firstCall: string): Recommendation {
   const M = transferTarget(firstCall);
   const den = M === "hearts" ? "H" : "S";
   const superOK = handHcp(opener) >= 17 && suitLength(opener, M) >= 4;
   if (superOK) return { best: "3" + den, acceptable: ["2" + den], explanationIfNotBest: "Super-accept: a maximum with 4-card support jumps to 3 of the major." };
   return { best: "2" + den, acceptable: [], explanationIfNotBest: "Complete the transfer." };
 }
-function transferResponderCont(responder: Hand, firstCall: string, superAccepted: boolean): Recommendation {
+export function transferResponderCont(responder: Hand, firstCall: string, superAccepted: boolean): Recommendation {
   const M = transferTarget(firstCall);
   const den = M === "hearts" ? "H" : "S";
   const len = suitLength(responder, M);
@@ -180,7 +180,7 @@ function transferResponderCont(responder: Hand, firstCall: string, superAccepted
     ? { best: "4" + den, acceptable: [], explanationIfNotBest: "Game values with a 6th trump; bid game in the major." }
     : { best: "3NT", acceptable: [], explanationIfNotBest: "Game values with exactly 5; offer a choice of games with 3NT." };
 }
-function openerAfterTransferInvite(opener: Hand, firstCall: string, cont: string): Recommendation | null {
+export function openerAfterTransferInvite(opener: Hand, firstCall: string, cont: string): Recommendation | null {
   const M = transferTarget(firstCall);
   const den = M === "hearts" ? "H" : "S";
   const support = suitLength(opener, M) >= 3;
@@ -203,7 +203,7 @@ function openerAfterTransferInvite(opener: Hand, firstCall: string, cont: string
 
 /* ---------- No-major (2NT / 3NT) branch ---------- */
 
-function openerInviteDecision(opener: Hand, respBid: string): Recommendation {
+export function openerInviteDecision(opener: Hand, respBid: string): Recommendation {
   if (respBid === "2NT") return handHcp(opener) >= 16
     ? { best: "3NT", acceptable: [], explanationIfNotBest: "Maximum; accept the invitation to 3NT." }
     : { best: "Pass", acceptable: [], explanationIfNotBest: "Minimum; pass the 2NT invitation." };
@@ -273,7 +273,7 @@ export function buildNTAuction(opener: Hand, responder: Hand): NTSeatCall[] {
 
 /* ---------- dealing ---------- */
 
-function dealTwoHands(): { a: Hand; b: Hand } {
+export function dealTwoHands(): { a: Hand; b: Hand } {
   const deck: Array<{ suit: Suit; rank: string }> = [];
   for (const s of SUITS) for (const r of RANKS) deck.push({ suit: s, rank: r });
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
