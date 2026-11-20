@@ -5,7 +5,7 @@ import type { Grade, Hand, Recommendation, Suit } from "@/lib/bridge/types";
 import { handHcp, DIST, distributionPointsForSupport } from "@/lib/bridge/eval";
 import { bidRank, BID_ROWS, gradeBid } from "@/lib/bridge/grade";
 import type { Scenario } from "@/lib/bridge/scenario";
-import { dealPractice, APPROACHES, CONV_CHIPS, CONV_LABEL, availableConventions, type Approach, type ConvChoice, type Role, type InterventionMode } from "@/lib/bridge/practice";
+import { dealPractice, APPROACHES, CONV_CHIPS, OVERCALL_CHIPS, CONV_LABEL, availableConventions, type Approach, type ConvChoice, type Role, type InterventionMode } from "@/lib/bridge/practice";
 
 const PALETTE = {
   bg: "#EFEAE0", card: "#FBF9F4", baize: "#14493A", ink: "#1B1B1A",
@@ -197,7 +197,7 @@ export default function V3PracticePage() {
       const res = await fetch("/api/coach", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          opening: scen.opening, hand: scen.userHand, hcp: handHcp(scen.userHand),
+          opening: scen.opening, overcall: oc, hand: scen.userHand, hcp: handHcp(scen.userHand),
           userBid: askedBid, tier: askedTier, best: currentRec.best,
           explanation: currentRec.explanationIfNotBest,
           auction: placed.join(" - "),
@@ -219,13 +219,16 @@ export default function V3PracticePage() {
   // stays blank until a later release models interference after Responder's
   // own call too -- the column exists now so that release doesn't need a
   // table rebuild.
-  const SEAT_COL: Record<string, number> = { opener: 0, lho: 1, responder: 2, rho: 3 };
-  const rows: Array<[string | null, string | null, string | null, string | null]> = [];
+  const oc = role === "overcaller";
+  const COLS = oc ? ["RHO (opens)", "You (overcall)"] : [`Opener${role === "opener" ? " (you)" : ""}`, "LHO", `Responder${role === "responder" ? " (you)" : ""}`, "RHO"];
+  const NC = COLS.length;
+  const SEAT_COL: Record<string, number> = oc ? { rho: 0, overcaller: 1 } : { opener: 0, lho: 1, responder: 2, rho: 3 };
+  const rows: Array<Array<string | null>> = [];
   placed.forEach((bid, i) => {
     const col = SEAT_COL[scen.calls[i].by] ?? 0;
-    if (col === 0) rows.push([bid, null, null, null]);
+    if (col === 0) rows.push(COLS.map((_, k) => (k === 0 ? bid : null)));
     else {
-      if (!rows.length) rows.push([null, null, null, null]);
+      if (!rows.length) rows.push(COLS.map(() => null));
       rows[rows.length - 1][col] = bid;
     }
   });
@@ -238,7 +241,7 @@ export default function V3PracticePage() {
     // opponent suit overcall, a redouble answers a live opponent takeout
     // double, and neither is ever offered outside the one scripted
     // interference point this release models.
-    if (bid === "X") return lastCallSeat === "lho" && lastBid !== "X";
+    if (bid === "X") return (lastCallSeat === "lho" || (oc && lastCallSeat === "rho")) && lastBid !== "X";
     if (bid === "XX") return lastCallSeat === "lho" && lastBid === "X";
     if (bid === "Pass") return true;
     if (!lastBid) return true;
@@ -254,6 +257,7 @@ export default function V3PracticePage() {
   let prompt = "Deal complete.";
   if (!done) {
     if (pendingFix) prompt = firstTier === "ACCEPTABLE" ? "That is an acceptable call, but the drill continues with the system call." : "That isn't the system call here.";
+    else if (oc) prompt = `RHO opened ${sym(placed[nextIndex - 1])}. Your call?`;
     else if (nextIndex === scen.userIndices[0]) prompt = role === "opener" ? "Your opening call." : "Your call as responder.";
     else prompt = `Partner bid ${sym(placed[nextIndex - 1])}. ${role === "opener" ? "Your rebid?" : "Your call?"}`;
   }
@@ -292,13 +296,13 @@ export default function V3PracticePage() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 13, color: PALETTE.muted }}>Bidding approach</span>
             {APPROACHES.map((a) => (
-              <button key={a.id} className="chip" onClick={() => { setApproach(a.id); if (conv !== "mixed" && !availableConventions(a.id).includes(conv)) setConv("mixed"); }} style={chip(a.id === approach)}>{a.label}</button>
+              <button key={a.id} className="chip" onClick={() => { setApproach(a.id); if (conv !== "mixed" && role !== "overcaller" && !availableConventions(a.id).includes(conv as never)) setConv("mixed"); }} style={chip(a.id === approach)}>{a.label}</button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 13, color: PALETTE.muted }}>Seat</span>
-            {(["responder", "opener"] as Role[]).map((r) => (
-              <button key={r} className="chip" onClick={() => setRole(r)} style={chip(r === role)}>{r}</button>
+            {(["responder", "opener", "overcaller"] as Role[]).map((r) => (
+              <button key={r} className="chip" onClick={() => { setRole(r); setConv("mixed"); }} style={chip(r === role)}>{r === "overcaller" ? "overcall" : r}</button>
             ))}
           </div>
           {approach === "two_over_one" && role === "responder" && (conv === "mixed" || conv === "bergen" || conv === "jacoby_2nt") && (
@@ -316,9 +320,9 @@ export default function V3PracticePage() {
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "4px 0" }}>
-          <span style={{ fontSize: 13, color: PALETTE.muted }}>Conventions</span>
-          {CONV_CHIPS.map((c) => {
-            const ok = c.id === "mixed" || availableConventions(approach).includes(c.id);
+          <span style={{ fontSize: 13, color: PALETTE.muted }}>{role === "overcaller" ? "Decision" : "Conventions"}</span>
+          {(role === "overcaller" ? OVERCALL_CHIPS : CONV_CHIPS).map((c) => {
+            const ok = role === "overcaller" || c.id === "mixed" || availableConventions(approach).includes(c.id as never);
             return (
               <button key={c.id} className="chip" disabled={!ok} title={ok ? undefined : "Not part of the Basic approach"}
                 onClick={() => setConv(c.id)} style={{ ...chip(c.id === conv), opacity: ok ? 1 : 0.35, cursor: ok ? "pointer" : "default" }}>{c.label}</button>
@@ -331,19 +335,13 @@ export default function V3PracticePage() {
             <div>
               <div style={{ fontSize: 12, color: PALETTE.muted, marginBottom: 8 }}>Auction</div>
               <div style={{ border: `1px solid ${PALETTE.line}`, borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", background: PALETTE.baize, color: "#F4EFE4", fontSize: 12 }}>
-                  <div style={{ padding: "6px 10px" }}>Opener{role === "opener" ? " (you)" : ""}</div>
-                  <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>LHO</div>
-                  <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>Responder{role === "responder" ? " (you)" : ""}</div>
-                  <div style={{ padding: "6px 10px", borderLeft: "1px solid rgba(255,255,255,.15)" }}>RHO</div>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${NC}, 1fr)`, background: PALETTE.baize, color: "#F4EFE4", fontSize: 12 }}>
+                  {COLS.map((c, k) => <div key={k} style={{ padding: "6px 10px", borderLeft: k ? "1px solid rgba(255,255,255,.15)" : undefined }}>{c}</div>)}
                 </div>
-                {rows.length === 0 && <div style={{ padding: 10, fontSize: 13, color: PALETTE.muted }}>Your call opens the auction.</div>}
+                {rows.length === 0 && <div style={{ padding: 10, fontSize: 13, color: PALETTE.muted }}>{oc ? "RHO is about to open." : "Your call opens the auction."}</div>}
                 {rows.map((r, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderTop: `1px solid ${PALETTE.line}` }}>
-                    <div style={{ padding: "8px 10px" }}>{r[0] ? <BidText bid={r[0]} /> : ""}</div>
-                    <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[1] ? <BidText bid={r[1]} /> : ""}</div>
-                    <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[2] ? <BidText bid={r[2]} /> : ""}</div>
-                    <div style={{ padding: "8px 10px", borderLeft: `1px solid ${PALETTE.line}` }}>{r[3] ? <BidText bid={r[3]} /> : ""}</div>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: `repeat(${NC}, 1fr)`, borderTop: `1px solid ${PALETTE.line}` }}>
+                    {COLS.map((_, k) => <div key={k} style={{ padding: "8px 10px", borderLeft: k ? `1px solid ${PALETTE.line}` : undefined }}>{r[k] ? <BidText bid={r[k] as string} /> : ""}</div>)}
                   </div>
                 ))}
               </div>
@@ -410,7 +408,7 @@ export default function V3PracticePage() {
             {done && (
               <button className="ghost" onClick={() => setReveal((v) => !v)}
                 style={{ fontFamily: "inherit", cursor: "pointer", border: `1px solid ${PALETTE.line}`, borderRadius: 8, background: PALETTE.card, color: PALETTE.ink, padding: "10px 18px", fontWeight: 700, fontSize: 14 }}>
-                {reveal ? "Hide partner's hand" : "Show partner's hand"}
+                {reveal ? `Hide ${oc ? "RHO's" : "partner's"} hand` : `Show ${oc ? "RHO's" : "partner's"} hand`}
               </button>
             )}
             <button className="ghost" onClick={askCoach} disabled={coach.loading}
@@ -420,7 +418,7 @@ export default function V3PracticePage() {
           </div>
 
           {reveal && done && (
-            <div style={{ marginTop: 14 }}><HandDiagram hand={scen.partnerHand} label={`Partner's hand (${role === "opener" ? "responder" : "opener"})`} trumpSuit={twoOverOneTrump} /></div>
+            <div style={{ marginTop: 14 }}><HandDiagram hand={scen.partnerHand} label={oc ? "RHO's hand (the opener)" : `Partner's hand (${role === "opener" ? "responder" : "opener"})`} trumpSuit={twoOverOneTrump} /></div>
           )}
 
           {coach.open && (coach.text || coach.err) && (
@@ -442,7 +440,7 @@ export default function V3PracticePage() {
 
         <footer style={{ marginTop: 22, fontSize: 11.5, color: PALETTE.muted, lineHeight: 1.5 }}>
           Two-round drill. Grading is deterministic (Rulebook v1); the second call is scored. Coach is live AI for explanation only.
-          V7: choose a bidding approach (2/1 or Basic), a seat, and a convention or Mixed; Basic offers Stayman and Transfers only, and New Minor Forcing and the Strong 2♣ opening are new (Sutton). V5 scope: Two Over One (2/1 GF + Bergen + Jacoby 2NT + 1NT forcing + Simple Raise/Help Suit Game Try + Splinter with a simple Roman Keycard 1430 follow-up), No Trump (Stayman, Puppet, Jacoby transfers, 2NT/3NT, and a quantitative 4NT slam invite), and Weak Two Bids (2D/2H/2S openings, responder's full decision tree, opener's feature-ask and new-suit follow-ups). Unusual NT, Western Cuebid, preemptive jump overcalls, and interference over a weak two are deferred — all of them require modeling opponents' calls, which this trainer doesn't yet do.
+          V8: the Overcall seat has RHO open one of a suit and you decide whether and how to bid (simple overcall, takeout double, 1NT overcall, or pass). V7: choose a bidding approach (2/1 or Basic), a seat, and a convention or Mixed; Basic offers Stayman and Transfers only, and New Minor Forcing and the Strong 2♣ opening are new (Sutton). V5 scope: Two Over One (2/1 GF + Bergen + Jacoby 2NT + 1NT forcing + Simple Raise/Help Suit Game Try + Splinter with a simple Roman Keycard 1430 follow-up), No Trump (Stayman, Puppet, Jacoby transfers, 2NT/3NT, and a quantitative 4NT slam invite), and Weak Two Bids (2D/2H/2S openings, responder's full decision tree, opener's feature-ask and new-suit follow-ups). Unusual NT, Western Cuebid, preemptive jump overcalls, and interference over a weak two are deferred — all of them require modeling opponents' calls, which this trainer doesn't yet do.
         </footer>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { dealNMFPair, buildNMFAuction } from "./nmf";
 import { dealSplinterPair, buildSplinterAuction } from "./splinter";
 import { dealBasicNTPair, buildBasicNTAuction } from "./basic";
 import { dealStrong2CPair, buildStrong2CAuction } from "./strong2c";
+import { dealOvercallPair, pickOvercallKind, buildOvercallAuction, type OvercallKind } from "./overcall";
 
 /* =============================================================================
    Practice structure (V7): the user picks a bidding APPROACH, a SEAT, and a
@@ -32,7 +33,7 @@ import { dealStrong2CPair, buildStrong2CAuction } from "./strong2c";
 
 export type Approach = "two_over_one" | "basic";
 export type ConvId = "bergen" | "jacoby_2nt" | "nmf" | "weak_two" | "stayman" | "puppet" | "transfers" | "splinter" | "rkc" | "strong2c";
-export type ConvChoice = "mixed" | ConvId;
+export type ConvChoice = "mixed" | ConvId | OvercallKind; // OvercallKind only applies to the overcaller seat
 export type { Role, InterventionMode };
 
 export const APPROACHES: { id: Approach; label: string }[] = [
@@ -58,6 +59,27 @@ export const CONV_CHIPS: { id: ConvChoice; label: string }[] = [
   { id: "rkc", label: "RKC" },
   { id: "strong2c", label: "Strong 2\u2663" },
 ];
+
+export const OVERCALL_CHIPS: { id: ConvChoice; label: string }[] = [
+  { id: "mixed", label: "Mixed" },
+  { id: "suit", label: "Simple overcall" },
+  { id: "double", label: "Takeout double" },
+  { id: "nt", label: "1NT overcall" },
+  { id: "pass", label: "Pass" },
+];
+const OVERCALL_LABEL: Record<OvercallKind, string> = { suit: "Simple overcall", double: "Takeout double", nt: "1NT overcall", pass: "Pass" };
+const OVERCALL_IDS: string[] = ["suit", "double", "nt", "pass"];
+
+// Overcall seat (V8): RHO opens one of a suit; the student makes the one graded call (overcall.ts).
+function dealOvercall(choice: ConvChoice): Scenario {
+  const kind: OvercallKind = OVERCALL_IDS.includes(choice) ? (choice as OvercallKind) : pickOvercallKind();
+  const p = dealOvercallPair(kind);
+  const calls = buildOvercallAuction(p) as SeatCall[];
+  return {
+    convention: "overcall", role: "overcaller", opener: p.opponent, responder: p.user, opening: p.opening,
+    calls, userIndices: [1], scoredIndex: 1, userHand: p.user, partnerHand: p.opponent, conv: OVERCALL_LABEL[p.kind],
+  };
+}
 
 const ALL: ConvId[] = ["bergen", "jacoby_2nt", "nmf", "weak_two", "stayman", "puppet", "transfers", "splinter", "rkc", "strong2c"];
 
@@ -104,8 +126,9 @@ export function dealPractice(
   choice: ConvChoice,
   intervention: InterventionMode = "none"
 ): Scenario {
+  if (role === "overcaller") return dealOvercall(choice); // 2/1 only; Basic and the convention list don't apply
   const pool = availableConventions(approach);
-  const conv: ConvId = choice === "mixed" ? nextMixed(approach) : pool.includes(choice) ? choice : pool[0];
+  const conv: ConvId = choice === "mixed" ? nextMixed(approach) : pool.includes(choice as ConvId) ? (choice as ConvId) : pool[0];
   const scen = dealConvention(approach, role, conv, intervention);
   scen.conv = CONV_LABEL[conv];
   return scen;

@@ -54,3 +54,11 @@
 **Standing rule (Nov 19):** Sutton is the authority and the default everywhere. Any direction that contradicts her is implemented only as an explicit user override and flagged as such; where the user is silent, Sutton's text is used.
 
 **Reverse Drury removed from the convention list (Nov 20).** At the user's direction it is no longer a chip, no longer in Mixed (2/1 Mixed is now 40% NT / 60% the other seven, ~8.6% each), and its 3rd/4th-seat context line is gone. `drury.ts` and the "drury" focus in `scenario.ts` are left in place, unused by the practice screen. Note: the module was built as "3rd or 4th seat, after one or two prior passes"; the user's stated reason for removing it was that Reverse Drury applies only after three passes. That differs from the module's rule and has not been checked against Sutton's Drury page.
+
+## V8 addendum: Overcall seat (first release)
+- New Seat chip "overcall": RHO opens one of a suit (overcall.ts), the student makes one graded call: Pass, simple overcall, takeout double, or 1NT overcall. 2/1 only. Decision chips: Mixed / Simple overcall / Takeout double / 1NT overcall / Pass.
+- Rulings from the user: takeout double minimum 13 points; "standard ACBL" for simple overcalls; no jump overcalls; Michaels / Unusual NT / cuebid raises / advancer deferred.
+- Sutton-based: 1-level overcall 8-16 HCP, 5+ card suit; takeout double = opening points counting dummy points, short in the opponent's suit.
+- Judgment calls (not Sutton): two-level overcall 11-16 HCP with a good suit (2 of top 3, or 3 of top 5); one-level suit needs 2 of top 5 honors; dummy points void 5 / singleton 3 / doubleton 1; double shape (<=2 in opp suit, 3+ in each unbid, 4+ unbid major); 1NT overcall 15-18 balanced with a stopper (standard ACBL); suit overcall best and X acceptable when both fit; RHO opening definition.
+- Not dealt: 19+ HCP, 17-18 HCP without a clean call, two-suiters, 7+ card suits, 6-card suits with <=10 HCP, balanced 15-18 without a stopper.
+- Not modeled: vulnerability, balancing seat, opponents' later calls, partner's response.

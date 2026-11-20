@@ -13,8 +13,8 @@ import {
   type InterventionMode,
 } from "./interference";
 
-export type Convention = "two_over_one" | "no_trump" | "weak_two";
-export type Role = "opener" | "responder";
+export type Convention = "two_over_one" | "no_trump" | "weak_two" | "overcall";
+export type Role = "opener" | "responder" | "overcaller"; // overcaller: the opponents opened (overcall.ts)
 // "lho"/"rho" are scripted opponent calls (V6 competitive bidding) -- never a
 // Role, never something the user is graded on, never matched by userIndices.
 export type Seat = Role | "lho" | "rho";
